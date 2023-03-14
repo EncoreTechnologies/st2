@@ -6,6 +6,7 @@ in development
 
 Added
 ~~~~~
+
 * Fix KV value lookup in actions when RBAC is enabled #5934
 
 * Move `git clone` to `user_home/.st2packs` #5845
