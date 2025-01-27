@@ -329,7 +329,7 @@ if [ "${ENABLE_COVERAGE}" = true ]; then
   PACK_SUB_DIRS=$(find $PACK_PATH -mindepth 1 -maxdepth 1 -type d -and -not -name "tests")
   for pack_sub_dir in $PACK_SUB_DIRS; do
     verbose_log "Enabling pytest coverage for directory: $pack_sub_dir"
-    PYTEST_OPTS+=(--cov=$pack_sub_dir --cov-report=term-missing)
+    PYTEST_OPTS+=(--cov=$pack_sub_dir --cov-report=term-missing --cov-omit="ci/*")
     echo "PYTEST_OPTS: ${PYTEST_OPTS[@]}"
   done # end for each $PACK_PYTHON_DIR
 fi # end enable test coverage
