@@ -64,7 +64,7 @@ def _register_cli_opts():
         ),
         cfg.StrOpt(
             "execution-id",
-            default="",
+            default=None,
             help="Execution ID to purge.",
         ),
     ]
