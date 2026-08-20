@@ -1,5 +1,6 @@
 # Remember to list implicit packages here, otherwise version won't be fixated!
 importlib-metadata
+zipp<3.16.0
 # importlib-metadata requires typing-extensions
 typing-extensions
 argcomplete
@@ -10,6 +11,8 @@ pyyaml
 jsonschema
 jsonpath-rw
 requests
+# urllib3 is a transitive dep
+urllib3
 six
 sseclient-py
 editor

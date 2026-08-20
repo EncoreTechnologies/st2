@@ -2,16 +2,10 @@ python_requirements(
     name="reqs",
     source="requirements-pants.txt",
     overrides={
-        # flex and stevedore uses pkg_resources w/o declaring the dep
-        ("flex", "stevedore"): dict(
+        # stevedore uses pkg_resources w/o declaring the dep
+        ("stevedore"): dict(
             dependencies=[
                 "//:reqs#setuptools",
-            ]
-        ),
-        # do not use the prance[flex] extra as that pulls in an old version of flex
-        "prance": dict(
-            dependencies=[
-                "//:reqs#flex",
             ]
         ),
         # tooz needs one or more backends (tooz is used by the st2 coordination backend)
@@ -65,6 +59,7 @@ target(
     dependencies=[
         "//:reqs#st2-auth-backend-flat-file",
         "//:reqs#st2-auth-ldap",
+        "//:reqs#st2-auth-backend-pam",
     ],
 )
 
@@ -87,6 +82,7 @@ file(
 
 shell_sources(
     name="root",
+    skip_shfmt=True,
 )
 
 file(
