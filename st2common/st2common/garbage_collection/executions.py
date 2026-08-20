@@ -42,7 +42,7 @@ DONE_STATES = [
 ]
 
 
-def purge_executions(logger, timestamp, action_ref=None, purge_incomplete=False):
+def purge_executions(logger, timestamp, action_ref=None, purge_incomplete=False, exe_id=None):
     """
     Purge action executions and corresponding live action, execution output objects.
 
@@ -55,17 +55,22 @@ def purge_executions(logger, timestamp, action_ref=None, purge_incomplete=False)
     :param purge_incomplete: True to also delete executions which are not in a done state.
     :type purge_incomplete: ``bool``
     """
-    if not timestamp:
-        raise ValueError("Specify a valid timestamp to purge.")
+    if not timestamp and not exe_id:
+        raise ValueError("Specify a valid timestamp or execution ID to purge.")
 
-    logger.info(
-        "Purging executions older than timestamp: %s"
-        % timestamp.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    )
+    if exe_id:
+        logger.info("Purging execution with ID: %s" % exe_id)
+    elif timestamp:
+        logger.info(
+            "Purging executions older than timestamp: %s"
+            % timestamp.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
     filters = {}
 
-    if purge_incomplete:
+    if exe_id:
+        filters["id"] = exe_id
+    elif purge_incomplete:
         filters["start_timestamp__lt"] = timestamp
     else:
         filters["end_timestamp__lt"] = timestamp
