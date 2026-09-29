@@ -62,6 +62,11 @@ def _register_cli_opts():
             + 'By default, only executions in completed states such as "succeeeded" '
             + ', "failed", "canceled" and "timed_out" are deleted.',
         ),
+        cfg.StrOpt(
+            "execution-id",
+            default=None,
+            help="Execution ID to purge.",
+        ),
     ]
     do_register_cli_opts(cli_opts)
 
@@ -74,11 +79,12 @@ def main():
     timestamp = cfg.CONF.timestamp
     action_ref = cfg.CONF.action_ref
     purge_incomplete = cfg.CONF.purge_incomplete
+    execution_id = cfg.CONF.execution_id
 
-    if not timestamp:
-        LOG.error("Please supply a timestamp for purging models. Aborting.")
+    if not execution_id and not timestamp:
+        LOG.error("Please supply a timestamp or execution ID for purging models. Aborting.")
         return 1
-    else:
+    if timestamp:
         timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%fZ")
         timestamp = timestamp.replace(tzinfo=pytz.UTC)
 
@@ -88,6 +94,7 @@ def main():
             timestamp=timestamp,
             action_ref=action_ref,
             purge_incomplete=purge_incomplete,
+            exe_id=execution_id,
         )
     except Exception as e:
         LOG.exception(six.text_type(e))
