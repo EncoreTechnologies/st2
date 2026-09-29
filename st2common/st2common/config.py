@@ -124,6 +124,15 @@ def register_opts(ignore_errors=False):
             default=False,
             help="True to validate action and runner output against schema.",
         ),
+        cfg.StrOpt(
+            "concurrency_library",
+            default="gevent",
+            choices=["eventlet", "gevent"],
+            help="Green thread concurrency library to use ('eventlet' or 'gevent'). "
+            "NOTE: This is read directly from this config file at process startup, "
+            "before oslo_config is available, so it cannot be overridden via CLI args "
+            "or environment variables.",
+        ),
     ]
 
     do_register_opts(system_opts, "system", ignore_errors)
@@ -371,6 +380,29 @@ def register_opts(ignore_errors=False):
             "connection_retry_wait",
             default=10000,
             help="How long should we wait between connection retries.",
+        ),
+        cfg.IntOpt(
+            "connection_retry_max_attempts",
+            default=10,
+            help="Maximum number of retry attempts for broker connection and reconnection. "
+            "This prevents infinite retry loops when the broker is unavailable. "
+            "Applies to both initial connection and reconnection during message publishing. "
+            "Set to 0 to retry indefinitely (not recommended).",
+        ),
+        cfg.IntOpt(
+            "connection_retry_interval_start",
+            default=1,
+            help="Starting retry interval in seconds for broker connection attempts.",
+        ),
+        cfg.IntOpt(
+            "connection_retry_interval_step",
+            default=1,
+            help="Increment for retry interval after each attempt (seconds).",
+        ),
+        cfg.IntOpt(
+            "connection_retry_interval_max",
+            default=30,
+            help="Maximum retry interval in seconds for broker connection attempts.",
         ),
         cfg.BoolOpt(
             "ssl",
@@ -768,8 +800,8 @@ def register_opts(ignore_errors=False):
         cfg.BoolOpt(
             "use-debugger",
             default=True,
-            help="Enables debugger. Note that using this option changes how the "
-            "eventlet library is used to support async IO. This could result in "
+            help="Enables debugger.  Note that using this option changes how the "
+            "concurrency library is used to support async IO.  This could result in "
             "failures that do not occur under normal operation.",
         ),
         cfg.BoolOpt(
@@ -778,14 +810,14 @@ def register_opts(ignore_errors=False):
             help="Enable code profiler mode. Do not use in production.",
         ),
         cfg.BoolOpt(
-            "enable-eventlet-blocking-detection",
+            "enable-concurrency-blocking-detection",
             default=False,
-            help="Enable eventlet blocking detection logic. Do not use in production.",
+            help="Enable blocking detection logic in concurrency library.  Do not use in production.",
         ),
         cfg.FloatOpt(
-            "eventlet-blocking-detection-resolution",
+            "concurrency-blocking-detection-resolution",
             default=0.5,
-            help="Resolution in seconds for eventlet blocking detection logic.",
+            help="Resolution in seconds for blocking detection logic in currency library.",
         ),
     ]
 

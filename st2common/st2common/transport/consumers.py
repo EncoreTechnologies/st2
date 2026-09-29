@@ -21,6 +21,7 @@ from kombu.mixins import ConsumerMixin
 from oslo_config import cfg
 
 from st2common import log as logging
+from st2common.transport.connection_retry_mixin import ConnectionRetryMixin
 from st2common.util.greenpooldispatch import BufferedDispatcher
 from st2common.util import concurrency
 
@@ -35,12 +36,15 @@ __all__ = [
 LOG = logging.getLogger(__name__)
 
 
-class QueueConsumer(ConsumerMixin):
+class QueueConsumer(ConnectionRetryMixin, ConsumerMixin):
     def __init__(self, connection, queues, handler):
         self.connection = connection
         self._dispatcher = BufferedDispatcher()
         self._queues = queues
         self._handler = handler
+
+        # Initialize connection retry tracking from mixin
+        self._init_connection_retry()
 
     def shutdown(self):
         self.should_stop = True
@@ -115,11 +119,9 @@ class ActionsQueueConsumer(QueueConsumer):
     """
 
     def __init__(self, connection, queues, handler):
-        self.connection = connection
+        super(ActionsQueueConsumer, self).__init__(connection, queues, handler)
 
-        self._queues = queues
-        self._handler = handler
-
+        # Override the single dispatcher with two specialized dispatchers
         workflows_pool_size = cfg.CONF.actionrunner.workflows_pool_size
         actions_pool_size = cfg.CONF.actionrunner.actions_pool_size
         self._workflows_dispatcher = BufferedDispatcher(
@@ -200,14 +202,14 @@ class MessageHandler(object):
             self.wait()
 
     def wait(self):
-        self._consumer_thread.wait()
+        return concurrency.wait(self._consumer_thread)
 
     def shutdown(self):
         LOG.info("Shutting down %s...", self.__class__.__name__)
         self._queue_consumer.shutdown()
 
     def kill(self):
-        self._consumer_thread.kill(SystemExit())
+        concurrency.kill(self._consumer_thread, SystemExit())
 
     @abc.abstractmethod
     def process(self, message):
