@@ -1,0 +1,7 @@
+---
+    name: "alias_with_st2kv_defaults"
+    pack: "aliases"
+    description: "Alias for an action with non-string parameters which default to datastore values"
+    action_ref: "wolfpack.action5"
+    formats:
+        - "st2kv defaults {{ int_param }}"
