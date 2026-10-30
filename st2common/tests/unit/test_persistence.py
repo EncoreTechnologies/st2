@@ -126,6 +126,39 @@ class TestPersistence(DbTestCase):
         self.assertEqual(obj1.name, objs[0].name)
         self.assertIsNone(getattr(obj1, "index", None))
 
+    def test_null_filter_stored_null_vs_missing(self):
+        obj1 = FakeModelDB(name=uuid.uuid4().hex, category="missing")
+        obj1 = self.access.add_or_update(obj1)
+        obj2 = FakeModelDB(name=uuid.uuid4().hex, category="null", index=1)
+        obj2 = self.access.add_or_update(obj2)
+        obj2 = self.access.update(obj2, publish=False, set__index=None)
+
+        # Check what is actually stored for both documents.
+        raw1 = FakeModelDB._get_collection().find_one({"_id": obj1.id})
+        raw2 = FakeModelDB._get_collection().find_one({"_id": obj2.id})
+        self.assertNotIn("index", raw1)
+        self.assertIn("index", raw2)
+        self.assertIsNone(raw2["index"])
+
+        # query() turns None into "field does not exist", so the stored null is not matched.
+        objs = self.access.query(index=None)
+        self.assertEqual(len(objs), 1)
+        self.assertEqual(objs[0].id, obj1.id)
+        objs = self.access.query(index="null")
+        self.assertEqual(len(objs), 1)
+        self.assertEqual(objs[0].id, obj1.id)
+
+        # get(), count(), distinct() and delete_by_query() pass None through, which matches both.
+        obj = self.access.get(index=None, category="null")
+        self.assertEqual(obj.id, obj2.id)
+        self.assertEqual(self.access.count(index=None), 2)
+        self.assertListEqual(
+            sorted(self.access.distinct(field="category", index=None)),
+            ["missing", "null"],
+        )
+        self.assertEqual(self.access._get_impl().delete_by_query(index=None), 2)
+        self.assertEqual(self.access.count(), 0)
+
     def test_datetime_range(self):
         base = date_utils.add_utc_tz(datetime.datetime(2014, 12, 25, 0, 0, 0))
         for i in range(60):

@@ -446,6 +446,18 @@ class ActionExecutionControllerTestCase(
         self.assertEqual(get_resp.status_int, 200)
         self.assertEqual(self._get_actionexecution_id(get_resp), actionexecution_id)
 
+    def test_get_one_last_returns_newest_execution(self):
+        actionexecution_ids = []
+        for _ in range(3):
+            post_resp = self._do_post(LIVE_ACTION_1)
+            actionexecution_ids.append(self._get_actionexecution_id(post_resp))
+
+        get_resp = self._do_get_one("last")
+        self.assertEqual(get_resp.status_int, 200)
+        self.assertEqual(
+            self._get_actionexecution_id(get_resp), actionexecution_ids[-1]
+        )
+
     def test_get_one_max_result_size_query_parameter(self):
         data = copy.deepcopy(LIVE_ACTION_1)
         post_resp = self._do_post(LIVE_ACTION_1)
@@ -2151,3 +2163,57 @@ class ActionExecutionOutputControllerTestCase(
             self.assertEqual(resp.status_int, 200)
             lines = resp.text.strip().split("\n")
             self.assertEqual(len(lines), 10)
+
+    def test_get_output_returned_in_insertion_order(self):
+        timestamp = date_utils.get_datetime_utc_now()
+        action_execution_db = ActionExecutionDB(
+            start_timestamp=timestamp,
+            end_timestamp=timestamp,
+            status=action_constants.LIVEACTION_STATUS_SUCCEEDED,
+            action={"ref": "core.local"},
+            runner={"name": "local-shell-cmd"},
+            liveaction_id="54c6b6d60640fd4f5354e74b",
+        )
+        action_execution_db = ActionExecution.add_or_update(action_execution_db)
+        liveaction_db = LiveActionDB(
+            id="54c6b6d60640fd4f5354e74b",
+            start_timestamp=timestamp,
+            end_timestamp=timestamp,
+            status=action_constants.LIVEACTION_STATUS_SUCCEEDED,
+            action="core.local",
+            runner_info={"name": "local-shell-cmd"},
+        )
+        LiveAction.add_or_update(liveaction_db)
+
+        # All lines share one timestamp, so only insertion order decides the result.
+        expected_lines = []
+        for i in range(1, 11):
+            output_type = "stdout" if i % 2 else "stderr"
+            output_db = ActionExecutionOutputDB(
+                execution_id=str(action_execution_db.id),
+                action_ref="core.local",
+                runner_ref="dummy",
+                timestamp=timestamp,
+                output_type=output_type,
+                data="%s %s\n" % (output_type, i),
+            )
+            ActionExecutionOutput.add_or_update(output_db)
+            expected_lines.append("%s %s" % (output_type, i))
+
+        resp = self.app.get(
+            "/v1/executions/%s/output" % (str(action_execution_db.id)),
+            expect_errors=False,
+        )
+        self.assertEqual(resp.status_int, 200)
+        self.assertListEqual(resp.text.strip().split("\n"), expected_lines)
+
+        resp = self.app.get(
+            "/v1/executions/%s/output?output_type=stderr"
+            % (str(action_execution_db.id)),
+            expect_errors=False,
+        )
+        self.assertEqual(resp.status_int, 200)
+        self.assertListEqual(
+            resp.text.strip().split("\n"),
+            [line for line in expected_lines if line.startswith("stderr")],
+        )
