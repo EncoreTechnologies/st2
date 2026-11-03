@@ -40,8 +40,12 @@ oslo.utils==7.3.0
 paramiko==3.5.1
 # 202403: bump to 3.0.43 for py3.10 support
 prompt-toolkit==3.0.53
+# psycopg must run in its pure python mode (no psycopg[binary] / psycopg-c), the C
+# implementation blocks the eventlet hub
+psycopg==3.3.7
 pymongo==4.6.3
 pyparsing==3.3.2
+sqlalchemy==2.0.55
 zstandard==0.25.0
 # pyOpenSSL is a candidate for removal and is not in lockfiles/st2.lock since it is not used.
 # pyOpenSSL 25.1.0 supports cryptography>=41.0.5,<46

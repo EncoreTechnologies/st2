@@ -26,9 +26,11 @@ def retry_on_exceptions(exc):
 
     LOG.warning("Evaluating retry on exception %s. %s", type(exc), str(exc))
 
+    from st2common.models.db import is_backend_connection_error
+
     is_mongo_connection_error = isinstance(exc, pymongo.errors.ConnectionFailure)
 
-    retrying = is_mongo_connection_error
+    retrying = is_mongo_connection_error or is_backend_connection_error(exc)
 
     if retrying:
         LOG.warning("Retrying on exception %s.", type(exc))

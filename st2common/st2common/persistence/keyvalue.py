@@ -132,6 +132,10 @@ class KeyValuePair(Access):
         return cls.impl
 
     @classmethod
+    def delete_by_query(cls, *args, **query):
+        return cls._get_impl().delete_by_query(*args, **query)
+
+    @classmethod
     def _get_by_object(cls, object):
         # For KeyValuePair name is unique.
         name = getattr(object, "name", "")

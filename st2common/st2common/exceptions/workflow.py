@@ -29,8 +29,13 @@ LOG = logging.getLogger(__name__)
 def retry_on_connection_errors(exc):
     LOG.warning("Determining if exception %s should be retried.", type(exc))
 
-    retrying = isinstance(exc, tooz.coordination.ToozConnectionError) or isinstance(
-        exc, mongoengine.connection.ConnectionFailure
+    # Late import to avoid circular dependency
+    from st2common.models.db import is_backend_connection_error
+
+    retrying = (
+        isinstance(exc, tooz.coordination.ToozConnectionError)
+        or isinstance(exc, mongoengine.connection.ConnectionFailure)
+        or is_backend_connection_error(exc)
     )
 
     if retrying:
