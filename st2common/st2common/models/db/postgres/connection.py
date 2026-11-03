@@ -110,6 +110,30 @@ def connect(db_name, db_host, db_port, username=None, password=None):
     return engine
 
 
+def create_database(db_name, db_host, db_port, username=None, password=None):
+    url = get_url(db_name, db_host, db_port, username=username, password=password)
+    db_name = url.database
+
+    engine = sa.create_engine(
+        url.set(database="postgres"), isolation_level="AUTOCOMMIT"
+    )
+    try:
+        with engine.connect() as conn:
+            exists = conn.execute(
+                sa.text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": db_name},
+            ).scalar()
+            if not exists:
+                conn.execute(
+                    sa.text(
+                        "CREATE DATABASE \"%s\" TEMPLATE template0 LC_COLLATE 'C' "
+                        "LC_CTYPE 'C' ENCODING 'UTF8'" % (db_name.replace('"', '""'))
+                    )
+                )
+    finally:
+        engine.dispose()
+
+
 def disconnect():
     global ENGINE
 

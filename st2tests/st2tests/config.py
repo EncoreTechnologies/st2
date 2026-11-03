@@ -96,6 +96,7 @@ def _override_db_opts():
 
 def db_opts_as_env_vars() -> Dict[str, str]:
     env = {
+        "ST2_DATABASE__BACKEND": CONF.database.backend,
         "ST2_DATABASE__HOST": CONF.database.host,
         "ST2_DATABASE__PORT": str(CONF.database.port),
         "ST2_DATABASE__DB_NAME": CONF.database.db_name,

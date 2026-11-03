@@ -49,6 +49,7 @@ from st2tests import DbTestCase
 
 from unittest import TestCase
 from st2tests.base import ALL_MODELS
+from st2tests.base import skip_unless_mongodb
 
 
 __all__ = [
@@ -116,6 +117,7 @@ class DbConnectionTestCase(DbTestCase):
         cls._establish_connection_and_re_create_db()
         super().tearDownClass()
 
+    @skip_unless_mongodb
     def test_check_connect(self):
         """
         Tests connectivity to the db server. Requires the db server to be
@@ -619,6 +621,7 @@ class DbConnectionTestCase(DbTestCase):
 class DbCleanupTestCase(DbTestCase):
     ensure_indexes = True
 
+    @skip_unless_mongodb
     def test_cleanup(self):
         """
         Tests dropping the database. Requires the db server to be running.
@@ -1060,6 +1063,7 @@ class KeyValuePairModelTestCase(DbTestCase):
             model_object.delete()
 
 
+@skip_unless_mongodb
 class KeyValuePairIndexesTestCase(DbTestCase):
     ensure_indexes = True
     ensure_indexes_models = [KeyValuePairDB]

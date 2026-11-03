@@ -25,7 +25,16 @@ from sqlalchemy.dialects import postgresql
 
 from st2common.models.db.postgres import codec
 
-__all__ = ["METADATA", "get_table", "column_name", "search_expr", "create_tables"]
+__all__ = [
+    "METADATA",
+    "column_name",
+    "create_tables",
+    "drop_tables",
+    "ensure_table",
+    "get_table",
+    "search_expr",
+    "truncate_tables",
+]
 
 METADATA = sa.MetaData()
 
@@ -125,8 +134,16 @@ def get_table(model):
     return sa.Table(table_name, METADATA, *(columns + indexes))
 
 
+# Tables known to exist in the connected database (created or checked by this process)
+CREATED_TABLES = set()
+
+
+def _unique_tables(model_classes):
+    return list({id(t): t for t in (get_table(m) for m in model_classes)}.values())
+
+
 def create_tables(engine, model_classes):
-    tables = list({id(t): t for t in (get_table(m) for m in model_classes)}.values())
+    tables = _unique_tables(model_classes)
 
     with engine.begin() as conn:
         conn.execute(
@@ -134,12 +151,36 @@ def create_tables(engine, model_classes):
         )
         METADATA.create_all(conn, tables=tables, checkfirst=True)
 
+    CREATED_TABLES.update(t.name for t in tables)
+
+
+def ensure_table(engine, model):
+    """
+    Create the model's table on first use, like MongoDB creates a collection.
+    """
+    if model._get_collection_name() not in CREATED_TABLES:
+        create_tables(engine, [model])
+
+
+def truncate_tables(engine, model_classes):
+    for model in model_classes:
+        ensure_table(engine, model)
+
+    tables = _unique_tables(model_classes)
+
+    with engine.begin() as conn:
+        conn.execute(
+            sa.text("TRUNCATE %s RESTART IDENTITY" % ", ".join(t.name for t in tables))
+        )
+
 
 def drop_tables(engine, model_classes):
-    tables = list({id(t): t for t in (get_table(m) for m in model_classes)}.values())
+    tables = _unique_tables(model_classes)
 
     with engine.begin() as conn:
         conn.execute(
             sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": SCHEMA_LOCK_KEY}
         )
         METADATA.drop_all(conn, tables=tables, checkfirst=True)
+
+    CREATED_TABLES.difference_update(t.name for t in tables)

@@ -39,6 +39,7 @@ from st2common.fields import JSONDictField
 from st2common.fields import JSONDictEscapedFieldCompatibilityField
 
 from st2tests import DbTestCase
+from st2tests.base import skip_unless_mongodb
 
 
 MOCK_DATA_DICT = {
@@ -168,6 +169,7 @@ class JSONDictFieldTestCase(unittest.TestCase):
         self.assertEqual(result, {"c": "d"})
 
 
+@skip_unless_mongodb
 class JSONDictEscapedFieldCompatibilityFieldTestCase(DbTestCase):
     def test_to_mongo(self):
         field = JSONDictEscapedFieldCompatibilityField(use_header=False)

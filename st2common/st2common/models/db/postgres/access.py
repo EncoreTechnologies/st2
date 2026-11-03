@@ -46,7 +46,10 @@ def _not_unique(func):
             return func(*args, **kwargs)
         except sa.exc.IntegrityError as e:
             if getattr(e.orig, "sqlstate", None) == UNIQUE_VIOLATION:
-                raise mongoengine.NotUniqueError(str(e.orig))
+                # Same message format as mongoengine
+                raise mongoengine.NotUniqueError(
+                    "Tried to save duplicate unique keys (%s)" % (e.orig)
+                )
             raise
 
     return wrapper
@@ -123,7 +126,18 @@ def apply_update(son, update):
 
 
 class PostgresDBAccess(MongoDBAccess):
+    """
+    Like mongoengine, reads use the access object's model and writes use the document's own
+    class (its table).
+    """
+
+    def _engine(self, model=None):
+        engine = get_engine()
+        schema.ensure_table(engine, model or self.model)
+        return engine
+
     def objects(self, *args, **kwargs):
+        self._engine()
         return PostgresQuerySet(self.model).filter(*args, **kwargs)
 
     def aggregate(self, *args, **kwargs):
@@ -131,17 +145,7 @@ class PostgresDBAccess(MongoDBAccess):
 
     # Row helpers
 
-    @property
-    def _table(self):
-        return self.model._get_collection_name()
-
-    def _row_values(self, doc_id, doc, search, blobs):
-        values = {"id": doc_id, "doc": doc, "search": search}
-        for name, value in blobs.items():
-            values[schema.column_name(name)] = value
-        return values
-
-    def _insert_sql(self, blobs, replace=False):
+    def _insert_sql(self, model, blobs, replace=False):
         columns = ["id", "doc", "search"] + [schema.column_name(b) for b in blobs]
         casts = {"doc": "json", "search": "jsonb"}
         values = [
@@ -149,7 +153,7 @@ class PostgresDBAccess(MongoDBAccess):
             for c in columns
         ]
         sql = "INSERT INTO %s (%s) VALUES (%s)" % (
-            self._table,
+            model._get_collection_name(),
             ", ".join(columns),
             ", ".join(values),
         )
@@ -159,38 +163,44 @@ class PostgresDBAccess(MongoDBAccess):
             )
         return sql
 
-    def _update_sql(self, blobs):
+    def _update_sql(self, model, blobs):
         sets = ["doc = CAST(:doc AS json)", "search = CAST(:search AS jsonb)"]
         sets += [
             "%s = CAST(:%s AS json)" % (schema.column_name(b), schema.column_name(b))
             for b in blobs
         ]
-        return "UPDATE %s SET %s WHERE id = :id" % (self._table, ", ".join(sets))
+        return "UPDATE %s SET %s WHERE id = :id" % (
+            model._get_collection_name(),
+            ", ".join(sets),
+        )
 
-    def _write_son(self, conn, son, replace=False, update=False):
-        doc_id, doc, search, blobs = codec.encode_son(self.model, son)
-        values = self._row_values(doc_id, doc, search, blobs)
+    def _write_son(self, conn, model, son, replace=False, update=False):
+        doc_id, doc, search, blobs = codec.encode_son(model, son)
+        values = {"id": doc_id, "doc": doc, "search": search}
+        for name, value in blobs.items():
+            values[schema.column_name(name)] = value
+
         if update:
-            sql = self._update_sql(blobs)
+            sql = self._update_sql(model, blobs)
         else:
-            sql = self._insert_sql(blobs, replace=replace)
+            sql = self._insert_sql(model, blobs, replace=replace)
         conn.execute(sa.text(sql), values)
 
-    def _lock_son(self, conn, doc_id):
-        blobs = codec.get_blob_fields(self.model)
+    def _lock_son(self, conn, model, doc_id):
+        blobs = codec.get_blob_fields(model)
         columns = ["id", "CAST(doc AS text)"] + [
             "CAST(%s AS text)" % schema.column_name(b) for b in blobs
         ]
         row = conn.execute(
             sa.text(
                 "SELECT %s FROM %s WHERE id = :id FOR UPDATE"
-                % (", ".join(columns), self._table)
+                % (", ".join(columns), model._get_collection_name())
             ),
             {"id": str(doc_id)},
         ).fetchone()
         if row is None:
             return None
-        return codec.decode_son(self.model, row[0], row[1], dict(zip(blobs, row[2:])))
+        return codec.decode_son(model, row[0], row[1], dict(zip(blobs, row[2:])))
 
     def _saved(self, instance):
         instance._clear_changed_fields()
@@ -201,39 +211,42 @@ class PostgresDBAccess(MongoDBAccess):
 
     @_not_unique
     def insert(self, instance):
+        model = type(instance)
         if instance.pk is None:
             instance.pk = bson.ObjectId()
 
-        with get_engine().begin() as conn:
-            self._write_son(conn, instance.to_mongo())
+        with self._engine(model).begin() as conn:
+            self._write_son(conn, model, instance.to_mongo())
 
         return self._saved(instance)
 
     @_not_unique
     def add_or_update(self, instance, validate=True):
+        model = type(instance)
         if validate:
             instance.validate()
 
         if instance.pk is None:
             instance.pk = bson.ObjectId()
-            with get_engine().begin() as conn:
-                self._write_son(conn, instance.to_mongo())
+            with self._engine(model).begin() as conn:
+                self._write_son(conn, model, instance.to_mongo())
         elif instance._created:
             # New document with an id set: replace the existing one or insert (mongoengine)
-            with get_engine().begin() as conn:
-                self._write_son(conn, instance.to_mongo(), replace=True)
+            with self._engine(model).begin() as conn:
+                self._write_son(conn, model, instance.to_mongo(), replace=True)
         else:
             self._save_changed_fields(instance)
 
         return self._saved(instance)
 
     def _save_changed_fields(self, instance, expected_rev=None):
+        model = type(instance)
         update = instance._get_update_doc()
         if not update and expected_rev is None:
             return
 
-        with get_engine().begin() as conn:
-            son = self._lock_son(conn, instance.pk)
+        with self._engine(model).begin() as conn:
+            son = self._lock_son(conn, model, instance.pk)
 
             if expected_rev is not None and (
                 son is None or son.get("rev") != expected_rev
@@ -243,13 +256,14 @@ class PostgresDBAccess(MongoDBAccess):
             if son is None:
                 # mongoengine saves changed fields with upsert
                 son = apply_update({"_id": instance.pk}, update)
-                self._write_son(conn, son)
+                self._write_son(conn, model, son)
                 return
 
-            self._write_son(conn, apply_update(son, update), update=True)
+            self._write_son(conn, model, apply_update(son, update), update=True)
 
     @_not_unique
     def update(self, instance, **kwargs):
+        model = type(instance)
         if instance.pk is None:
             raise mongoengine.OperationError(
                 "attempt to update a document not yet saved"
@@ -257,20 +271,23 @@ class PostgresDBAccess(MongoDBAccess):
         if not kwargs:
             raise mongoengine.OperationError("No update parameters, would remove data")
 
-        update = transform.update(self.model, **kwargs)
+        update = transform.update(model, **kwargs)
 
-        with get_engine().begin() as conn:
-            son = self._lock_son(conn, instance.pk)
+        with self._engine(model).begin() as conn:
+            son = self._lock_son(conn, model, instance.pk)
             if son is None:
                 return 0
-            self._write_son(conn, apply_update(son, update), update=True)
+            self._write_son(conn, model, apply_update(son, update), update=True)
 
         return 1
 
     def delete(self, instance):
-        with get_engine().begin() as conn:
+        model = type(instance)
+        with self._engine(model).begin() as conn:
             conn.execute(
-                sa.text("DELETE FROM %s WHERE id = :id" % (self._table)),
+                sa.text(
+                    "DELETE FROM %s WHERE id = :id" % (model._get_collection_name())
+                ),
                 {"id": str(instance.pk)},
             )
 
@@ -290,6 +307,7 @@ class ChangeRevisionPostgresDBAccess(PostgresDBAccess):
         if not getattr(instance, "id", None):
             return self.insert(instance)
 
+        model = type(instance)
         expected_rev = instance.rev
         instance.rev = instance.rev + 1
 
@@ -298,8 +316,8 @@ class ChangeRevisionPostgresDBAccess(PostgresDBAccess):
 
         if instance._created:
             # mongoengine ignores the save condition for a new document
-            with get_engine().begin() as conn:
-                self._write_son(conn, instance.to_mongo(), replace=True)
+            with self._engine(model).begin() as conn:
+                self._write_son(conn, model, instance.to_mongo(), replace=True)
         else:
             self._save_changed_fields(instance, expected_rev=expected_rev)
 

@@ -17,6 +17,7 @@ from __future__ import absolute_import
 import mock
 
 from st2tests import DbTestCase
+from st2tests.base import skip_unless_mongodb
 from st2common.persistence.auth import User
 from st2common.models.utils.profiling import enable_profiling
 from st2common.models.utils.profiling import disable_profiling
@@ -39,6 +40,7 @@ class MongoDBProfilingTestCase(DbTestCase):
         call_args_list = mock_log.debug.call_args_list
         assert call_args_list == []
 
+    @skip_unless_mongodb
     @mock.patch("st2common.models.utils.profiling.LOG")
     def test_logging_profiling_is_enabled(self, mock_log):
         enable_profiling()

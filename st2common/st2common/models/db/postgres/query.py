@@ -37,6 +37,7 @@ from st2common.models.db.postgres.connection import get_engine
 __all__ = ["PostgresQuerySet", "compile_filter", "compile_order_by"]
 
 DOC_SOURCE = "CAST(doc AS jsonb)"
+MAX_INT64 = 2**63 - 1
 _STARTS_WITH = re.compile(r"^\^((?:\\.|[^\\.^$*+?{}\[\]|()])*)$")
 
 
@@ -402,6 +403,11 @@ class PostgresQuerySet(object):
         return [b for b in blobs if b not in excluded]
 
     def _select_sql(self, offset, limit):
+        # Same error as pymongo, callers turn it into a "too large" message
+        for value in (offset, limit):
+            if value is not None and value > MAX_INT64:
+                raise OverflowError("Offset and limit must be 8-byte integers")
+
         table = self._model._get_collection_name()
         blobs = self._blob_columns()
         columns = ["id", "CAST(doc AS text)"] + [
@@ -475,14 +481,12 @@ class PostgresQuerySet(object):
         if isinstance(key, slice):
             if key.step is not None or (key.start or 0) < 0:
                 raise ValueError("Unsupported slice: %s" % (key))
+            # Like mongoengine, a slice replaces any previous skip / limit
             qs = self._clone()
-            start = key.start or 0
-            qs._offset = self._offset + start
-            limit = None if key.stop is None else max(0, key.stop - start)
-            if self._limit is not None:
-                remaining = max(0, self._limit - start)
-                limit = remaining if limit is None else min(limit, remaining)
-            qs._limit = limit
+            qs._offset = key.start or 0
+            qs._limit = key.stop
+            if key.start and key.stop:
+                qs._limit = max(0, key.stop - key.start)
             return qs
 
         if self._cache is not None:

@@ -45,18 +45,52 @@ JSON_UNFRIENDLY_TYPES = (datetime.datetime, bson.ObjectId)
 
 DICT_FIELD_NOT_SET_MARKER = "dict-field-not-set"
 
+# Access objects used by the document methods below on non MongoDB backends, per model class
+_BACKEND_ACCESS = {}
+
+
+def _get_backend_name():
+    # Late import, st2common.models.db imports this module
+    from st2common.models.db import get_backend_name
+
+    return get_backend_name()
+
+
+def _get_backend_access(model):
+    from st2common.models.db import get_access
+
+    if model not in _BACKEND_ACCESS:
+        _BACKEND_ACCESS[model] = get_access(model)
+    return _BACKEND_ACCESS[model]
+
+
+class BackendQuerySetManager(me.queryset.QuerySetManager):
+    """
+    "objects" manager which returns the configured backend's query set (MongoDB: unchanged).
+    """
+
+    def __get__(self, instance, owner):
+        if instance is None and _get_backend_name() != "mongodb":
+            return _get_backend_access(owner).objects()
+
+        return super(BackendQuerySetManager, self).__get__(instance, owner)
+
 
 class StormFoundationDB(me.Document, DictSerializableClassMixin):
     """
     Base abstraction for a model entity. This foundation class should only be directly
     inherited from the application domain models.
+
+    The mongoengine document methods (save, delete, update, reload, drop_collection, objects)
+    go to the configured database backend, so code calling them directly also works on non
+    MongoDB backends.
     """
 
     # Variable representing a type of this resource
     RESOURCE_TYPE = ResourceType.UNKNOWN
 
     # We explicitly assign the manager so pylint know what type objects is
-    objects = me.queryset.QuerySetManager()
+    objects = BackendQuerySetManager()
 
     # Note: In mongoengine >= 0.10 "id" field is automatically declared on all
     # the documents and declaring it ourselves causes a lot of issues so we
@@ -76,6 +110,51 @@ class StormFoundationDB(me.Document, DictSerializableClassMixin):
             )
             attrs.append("%s=%s" % (k, v))
         return "%s(%s)" % (self.__class__.__name__, ", ".join(attrs))
+
+    def save(self, *args, **kwargs):
+        if _get_backend_name() == "mongodb":
+            return super(StormFoundationDB, self).save(*args, **kwargs)
+
+        if args or kwargs.get("save_condition", None):
+            raise ValueError("Only save(validate=...) is supported on this backend")
+
+        return _get_backend_access(type(self)).add_or_update(
+            self, validate=kwargs.get("validate", True)
+        )
+
+    def delete(self, *args, **kwargs):
+        if _get_backend_name() == "mongodb":
+            return super(StormFoundationDB, self).delete(*args, **kwargs)
+
+        return _get_backend_access(type(self)).delete(self)
+
+    def update(self, **kwargs):
+        if _get_backend_name() == "mongodb":
+            return super(StormFoundationDB, self).update(**kwargs)
+
+        return _get_backend_access(type(self)).update(self, **kwargs)
+
+    def reload(self, *fields, **kwargs):
+        if _get_backend_name() == "mongodb":
+            return super(StormFoundationDB, self).reload(*fields, **kwargs)
+
+        fresh = _get_backend_access(type(self)).get(id=self.id)
+        if fresh is None:
+            raise self.DoesNotExist("Document does not exist")
+
+        for name in fields or self._fields:
+            setattr(self, name, getattr(fresh, name))
+        self._clear_changed_fields()
+        return self
+
+    @classmethod
+    def drop_collection(cls):
+        if _get_backend_name() == "mongodb":
+            return super(StormFoundationDB, cls).drop_collection()
+
+        from st2common.models.db import get_backend_module
+
+        get_backend_module().drop_collection(cls)
 
     def get_resource_type(self):
         return self.RESOURCE_TYPE

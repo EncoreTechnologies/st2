@@ -21,8 +21,10 @@ Loaded by st2common.models.db only when that backend is configured.
 from __future__ import absolute_import
 
 from oslo_config import cfg
+import sqlalchemy as sa
 
 from st2common import log as logging
+from st2common.models.db.postgres import codec
 from st2common.models.db.postgres import connection
 from st2common.models.db.postgres import schema
 from st2common.models.db.postgres.access import ChangeRevisionPostgresDBAccess
@@ -30,7 +32,10 @@ from st2common.models.db.postgres.access import PostgresDBAccess
 
 __all__ = [
     "ACCESS_CLASSES",
+    "create_database",
     "db_cleanup",
+    "drop_collection",
+    "get_stored_document",
     "db_ensure_indexes",
     "db_setup",
     "db_teardown",
@@ -64,6 +69,52 @@ def _get_model_classes():
     return get_model_classes()
 
 
+def get_stored_document(model, doc_id):
+    """
+    Return the stored (to_mongo() style) form of a document, or None. Used by the tests.
+    """
+    engine = connection.get_engine()
+    schema.ensure_table(engine, model)
+    blobs = codec.get_blob_fields(model)
+    columns = ["id", "CAST(doc AS text)"] + [
+        "CAST(%s AS text)" % schema.column_name(b) for b in blobs
+    ]
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            sa.text(
+                "SELECT %s FROM %s WHERE id = :id"
+                % (", ".join(columns), model._get_collection_name())
+            ),
+            {"id": str(doc_id)},
+        ).fetchone()
+
+    if row is None:
+        return None
+    return codec.decode_son(model, row[0], row[1], dict(zip(blobs, row[2:])))
+
+
+def drop_collection(model):
+    """
+    Delete every document of a model (MongoDB drops the collection).
+    """
+    schema.truncate_tables(connection.get_engine(), [model])
+
+
+class PostgresConnection(object):
+    """
+    Returned by db_setup() in place of the pymongo client.
+    """
+
+    def __init__(self, engine):
+        self.engine = engine
+
+    def drop_database(self, db_name):
+        # Tables have to stay since they are not re-created on first use like MongoDB
+        # collections, so "dropping" the database empties every StackStorm table
+        schema.truncate_tables(self.engine, _get_model_classes())
+
+
 def db_setup(
     db_name, db_host, db_port, username=None, password=None, ensure_indexes=True
 ):
@@ -73,11 +124,22 @@ def db_setup(
         db_name, db_host, db_port, username=username, password=password
     )
 
+    schema.CREATED_TABLES.clear()
+
     # Tables must exist before first use (MongoDB creates collections and indexes lazily), so
     # they are always created, ensure_indexes or not
     db_ensure_indexes(_get_model_classes())
 
-    return engine
+    return PostgresConnection(engine)
+
+
+def create_database(db_name, db_host, db_port, username=None, password=None):
+    """
+    Create the database (C collation) if it doesn't exist yet. Used by the tests.
+    """
+    connection.create_database(
+        db_name, db_host, db_port, username=username, password=password
+    )
 
 
 def db_ensure_indexes(model_classes=None):
@@ -104,4 +166,4 @@ def db_cleanup(db_name, db_host, db_port, username=None, password=None):
     )
 
     schema.drop_tables(engine, _get_model_classes())
-    return engine
+    return PostgresConnection(engine)
