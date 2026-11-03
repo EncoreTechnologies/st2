@@ -17,6 +17,7 @@ from __future__ import absolute_import
 
 import copy
 import datetime
+import logging as stdlib_logging
 import retrying
 import six
 import sys
@@ -413,7 +414,7 @@ def request_resume(ac_ex_db):
     # Write the updated workflow status and task flow to the database.
     wf_ex_db.status = conductor.get_workflow_status()
     wf_ex_db.state = conductor.workflow_state.serialize()
-    wf_db_access.WorkflowExecution.update(wf_ex_db, publish=False)
+    wf_db_access.WorkflowExecution.update(wf_ex_db, publish=False, refresh=False)
     wf_ex_db = wf_db_access.WorkflowExecution.get_by_id(str(wf_ex_db.id))
 
     # Publish status change.
@@ -475,7 +476,8 @@ def request_cancellation(ac_ex_db):
         root_lv_ac_db = lv_db_access.LiveAction.get(id=root_ac_ex_db.liveaction_id)
         ac_svc.request_cancellation(root_lv_ac_db, None)
 
-    LOG.debug("[%s] %s", wf_ac_ex_id, conductor.serialize())
+    if LOG.isEnabledFor(stdlib_logging.DEBUG):
+        LOG.debug("[%s] %s", wf_ac_ex_id, conductor.serialize())
     LOG.info("[%s] Completed processing cancelation request for workflow.", wf_ac_ex_id)
 
     return wf_ex_db
@@ -561,7 +563,7 @@ def request_rerun(ac_ex_db, st2_ctx, options=None):
     wf_ex_db.graph = data["graph"]
     wf_ex_db.state = data["state"]
 
-    wf_db_access.WorkflowExecution.update(wf_ex_db, publish=False)
+    wf_db_access.WorkflowExecution.update(wf_ex_db, publish=False, refresh=False)
     wf_ex_db = wf_db_access.WorkflowExecution.get_by_id(str(wf_ex_db.id))
 
     # Publish status change.
@@ -610,7 +612,8 @@ def request_task_execution(wf_ex_db, st2_ctx, task_ex_req):
             itemized=task_spec.has_items(),
             items_count=task_ex_req.get("items_count"),
             items_concurrency=task_ex_req.get("concurrency"),
-            context=task_ctx,
+            # The workflow state is already stored with the workflow execution.
+            context={k: v for k, v in six.iteritems(task_ctx) if k != "__state"},
             status=statuses.REQUESTED,
         )
 
@@ -948,9 +951,15 @@ def handle_action_execution_completion(ac_ex_db):
 
     # Acquire lock before write operations.
     with coord_svc.get_coordinator(start_heart=True).get_lock(str(wf_ex_id).encode()):
-        # Get execution records for logging purposes.
-        wf_ex_db = wf_db_access.WorkflowExecution.get_by_id(wf_ex_id)
-        task_ex_db = wf_db_access.TaskExecution.get_by_id(task_ex_id)
+        # Get execution records for logging purposes. Only load the fields used here.
+        wf_ex_db = wf_db_access.WorkflowExecution.get(
+            id=wf_ex_id, only_fields=["context"], raise_exception=True
+        )
+        task_ex_db = wf_db_access.TaskExecution.get(
+            id=task_ex_id,
+            only_fields=["task_id", "task_route", "status"],
+            raise_exception=True,
+        )
 
         msg = (
             'Handling completion of action execution "%s" '
@@ -1056,7 +1065,8 @@ def update_task_state(
             accumulated_result=accumulated_result,
         )
 
-    update_progress(wf_ex_db, conductor.serialize(), severity="debug", stream=False)
+    if LOG.isEnabledFor(stdlib_logging.DEBUG):
+        update_progress(wf_ex_db, conductor.serialize(), severity="debug", stream=False)
     conductor.update_task_state(task_ex_db.task_id, task_ex_db.task_route, ac_ex_event)
 
     # Update workflow execution and related liveaction and action execution.
@@ -1096,17 +1106,25 @@ def request_next_tasks(wf_ex_db, task_ex_id=None):
     # Identify the list of next set of tasks. Don't pass the task id to the conductor
     # so it can identify any next set of tasks to run from the workflow.
     if task_ex_id:
-        task_ex_db = wf_db_access.TaskExecution.get_by_id(task_ex_id)
+        task_ex_db = wf_db_access.TaskExecution.get(
+            id=task_ex_id, only_fields=["task_id", "task_route"], raise_exception=True
+        )
         msg = 'Identifying next set (iter %s) of tasks after completion of task "%s", route "%s".'
         msg = msg % (str(iteration), task_ex_db.task_id, str(task_ex_db.task_route))
         update_progress(wf_ex_db, msg)
-        update_progress(wf_ex_db, conductor.serialize(), severity="debug", stream=False)
+        if LOG.isEnabledFor(stdlib_logging.DEBUG):
+            update_progress(
+                wf_ex_db, conductor.serialize(), severity="debug", stream=False
+            )
         next_tasks = conductor.get_next_tasks()
     else:
         msg = 'Identifying next set (iter %s) of tasks for workflow execution in status "%s".'
         msg = msg % (str(iteration), conductor.get_workflow_status())
         update_progress(wf_ex_db, msg)
-        update_progress(wf_ex_db, conductor.serialize(), severity="debug", stream=False)
+        if LOG.isEnabledFor(stdlib_logging.DEBUG):
+            update_progress(
+                wf_ex_db, conductor.serialize(), severity="debug", stream=False
+            )
         next_tasks = conductor.get_next_tasks()
 
     # If there is no new tasks, update execution records to handle possible completion.
@@ -1168,7 +1186,10 @@ def request_next_tasks(wf_ex_db, task_ex_id=None):
                 conductor.update_task_state(task["id"], task["route"], ac_ex_event)
 
         # Update workflow execution and related liveaction and action execution.
-        update_progress(wf_ex_db, conductor.serialize(), severity="debug", stream=False)
+        if LOG.isEnabledFor(stdlib_logging.DEBUG):
+            update_progress(
+                wf_ex_db, conductor.serialize(), severity="debug", stream=False
+            )
         update_execution_records(wf_ex_db, conductor)
 
         # Request task execution for the tasks.
@@ -1211,7 +1232,10 @@ def request_next_tasks(wf_ex_db, task_ex_id=None):
         msg = 'Identifying next set (iter %s) of tasks for workflow execution in status "%s".'
         msg = msg % (str(iteration), conductor.get_workflow_status())
         update_progress(wf_ex_db, msg)
-        update_progress(wf_ex_db, conductor.serialize(), severity="debug", stream=False)
+        if LOG.isEnabledFor(stdlib_logging.DEBUG):
+            update_progress(
+                wf_ex_db, conductor.serialize(), severity="debug", stream=False
+            )
         next_tasks = conductor.get_next_tasks()
 
         if not next_tasks:
@@ -1240,7 +1264,10 @@ def update_task_execution(task_ex_id, ac_ex_status, ac_ex_result=None, ac_ex_ctx
         return
 
     task_ex_db = wf_db_access.TaskExecution.get_by_id(task_ex_id)
-    wf_ex_db = wf_db_access.WorkflowExecution.get_by_id(task_ex_db.workflow_execution)
+    # Only used for logging progress.
+    wf_ex_db = wf_db_access.WorkflowExecution.get(
+        id=task_ex_db.workflow_execution, only_fields=["context"], raise_exception=True
+    )
 
     # Treat the update of task with items but items list is empty like a normal task execution.
     if not task_ex_db.itemized or (task_ex_db.itemized and task_ex_db.items_count == 0):
@@ -1305,7 +1332,7 @@ def update_task_execution(task_ex_id, ac_ex_status, ac_ex_result=None, ac_ex_ctx
     if task_ex_db.status in statuses.COMPLETED_STATUSES:
         task_ex_db.end_timestamp = date_utils.get_datetime_utc_now()
 
-    wf_db_access.TaskExecution.update(task_ex_db, publish=False)
+    wf_db_access.TaskExecution.update(task_ex_db, publish=False, refresh=False)
 
 
 @retrying.retry(
@@ -1331,7 +1358,7 @@ def resume_task_execution(task_ex_id):
     task_ex_db.status = statuses.RUNNING
 
     # Write update to the database.
-    wf_db_access.TaskExecution.update(task_ex_db, publish=False)
+    wf_db_access.TaskExecution.update(task_ex_db, publish=False, refresh=False)
 
 
 @retrying.retry(

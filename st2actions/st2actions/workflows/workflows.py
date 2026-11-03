@@ -210,9 +210,15 @@ class WorkflowExecutionHandler(consumers.VariableMessageHandler):
         wf_ex_id = ac_ex_db.context["orquesta"]["workflow_execution_id"]
         task_ex_id = ac_ex_db.context["orquesta"]["task_execution_id"]
 
-        # Get execution records for logging purposes.
-        wf_ex_db = wf_db_access.WorkflowExecution.get_by_id(wf_ex_id)
-        task_ex_db = wf_db_access.TaskExecution.get_by_id(task_ex_id)
+        # Get execution records for logging purposes. Only load the fields used here.
+        wf_ex_db = wf_db_access.WorkflowExecution.get(
+            id=wf_ex_id, only_fields=["context"], raise_exception=True
+        )
+        task_ex_db = wf_db_access.TaskExecution.get(
+            id=task_ex_id,
+            only_fields=["task_id", "task_route", "status"],
+            raise_exception=True,
+        )
 
         msg = 'Action execution "%s" for task "%s" is updated and in "%s" state.' % (
             str(ac_ex_db.id),

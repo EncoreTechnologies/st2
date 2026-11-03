@@ -269,9 +269,9 @@ class OrquestaRunnerTest(st2tests.ExecutionDbTestCase):
             action_execution=str(ac_ex_db.id)
         )[0]
 
+        # The workflow state is not stored again with each task.
         expected_ctx_keys = [
             "__current_task",
-            "__state",
             "message",
             "msg1",
             "msg2",
@@ -281,28 +281,13 @@ class OrquestaRunnerTest(st2tests.ExecutionDbTestCase):
             "who",
         ]
 
-        expected_state_keys = [
-            "contexts",
-            "routes",
-            "sequence",
-            "staged",
-            "status",
-            "tasks",
-        ]
-
-        # Check the context stored with task1, including the copy of the workflow state.
+        # Check the context stored with task1.
         query_filters = {"workflow_execution": str(wf_ex_db.id), "task_id": "task1"}
         tk1_ex_db = wf_db_access.TaskExecution.query(**query_filters)[0]
         tk1_ctx = tk1_ex_db.context
         self.assertListEqual(sorted(tk1_ctx.keys()), expected_ctx_keys)
         self.assertDictEqual(tk1_ctx["__current_task"], {"id": "task1", "route": 0})
         self.assertEqual(tk1_ctx["who"], "Thanos")
-        self.assertListEqual(sorted(tk1_ctx["__state"].keys()), expected_state_keys)
-        self.assertEqual(len(tk1_ctx["__state"]["contexts"]), 1)
-        self.assertEqual(tk1_ctx["__state"]["contexts"][0]["who"], "Thanos")
-        self.assertListEqual(
-            [t["id"] for t in tk1_ctx["__state"]["sequence"]], ["task1"]
-        )
 
         # Complete task1 and check the context stored with task2.
         tk1_ac_ex_db = ex_db_access.ActionExecution.query(
@@ -314,9 +299,11 @@ class OrquestaRunnerTest(st2tests.ExecutionDbTestCase):
         tk2_ctx = tk2_ex_db.context
         self.assertListEqual(sorted(tk2_ctx.keys()), expected_ctx_keys)
         self.assertDictEqual(tk2_ctx["__current_task"], {"id": "task2", "route": 0})
-        self.assertListEqual(sorted(tk2_ctx["__state"].keys()), expected_state_keys)
+
+        # The workflow state is still kept with the workflow execution.
+        wf_ex_db = wf_db_access.WorkflowExecution.get_by_id(wf_ex_db.id)
         self.assertListEqual(
-            [t["id"] for t in tk2_ctx["__state"]["sequence"]], ["task1", "task2"]
+            [t["id"] for t in wf_ex_db.state["sequence"]], ["task1", "task2"]
         )
 
     def test_run_workflow_with_unicode_input(self):

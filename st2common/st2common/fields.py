@@ -359,8 +359,12 @@ class JSONDictField(BinaryField):
         return data
 
     def validate(self, value):
-        value = self.to_mongo(value)
-        return super(JSONDictField, self).validate(value)
+        # save() serializes the whole document again right after validation, so only do the
+        # type check to_mongo() would do instead of serializing the value here as well.
+        if not isinstance(value, dict):
+            raise ValueError(
+                "value argument must be a dictionary (got: %s)" % type(value)
+            )
 
     def parse_field_value(self, value: Optional[Union[bytes, dict]]) -> dict:
         """
@@ -429,6 +433,13 @@ class JSONDictEscapedFieldCompatibilityField(JSONDictField):
     On retrieval, if an old format is detected it's correctly un-serialized and on insertion, we
     always insert data in a new format.
     """
+
+    def validate(self, value):
+        if isinstance(value, bytes):
+            # Already serialized
+            return
+
+        return super(JSONDictEscapedFieldCompatibilityField, self).validate(value)
 
     def to_mongo(self, value):
         if isinstance(value, bytes):

@@ -21,10 +21,31 @@ from st2common.models.db import workflow as wf_db_models
 from st2common.persistence import base as persistence
 
 
-__all__ = ["WorkflowExecution", "TaskExecution"]
+__all__ = ["ChangeRevisionResource", "WorkflowExecution", "TaskExecution"]
 
 
-class WorkflowExecution(persistence.StatusBasedResource):
+class ChangeRevisionResource(persistence.StatusBasedResource):
+    @classmethod
+    def update(
+        cls, model_object, publish=True, dispatch_trigger=True, refresh=True, **kwargs
+    ):
+        # Writes here are compare-and-swap on rev and only take plain field values, so
+        # there is no original state to read and roll back to like in the base update.
+        model_object = cls._get_impl().update(model_object, **kwargs)
+
+        if refresh:
+            model_object = cls.get_by_id(model_object.id)
+
+        if publish:
+            cls.publish_update(model_object)
+
+        if dispatch_trigger:
+            cls.dispatch_update_trigger(model_object)
+
+        return model_object
+
+
+class WorkflowExecution(ChangeRevisionResource):
     impl = db.ChangeRevisionMongoDBAccess(wf_db_models.WorkflowExecutionDB)
     publisher = None
 
@@ -44,7 +65,7 @@ class WorkflowExecution(persistence.StatusBasedResource):
         return cls._get_impl().delete_by_query(*args, **query)
 
 
-class TaskExecution(persistence.StatusBasedResource):
+class TaskExecution(ChangeRevisionResource):
     impl = db.ChangeRevisionMongoDBAccess(wf_db_models.TaskExecutionDB)
     publisher = None
 

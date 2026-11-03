@@ -180,6 +180,29 @@ class JSONDictEscapedFieldCompatibilityFieldTestCase(DbTestCase):
         result_to_mongo_2 = field.to_mongo(MOCK_DATA_DICT)
         self.assertEqual(result_to_mongo_2, result_to_mongo_1)
 
+    def test_validate_does_not_serialize(self):
+        field = JSONDictEscapedFieldCompatibilityField(use_header=False)
+
+        with mock.patch.object(
+            JSONDictField, "_serialize_field_value", mock.MagicMock()
+        ) as mock_serialize:
+            field.validate(MOCK_DATA_DICT)
+            field.validate(b"zalready serialized")
+            JSONDictField(use_header=False).validate(MOCK_DATA_DICT)
+
+        self.assertFalse(mock_serialize.called)
+
+        # Same type checks as to_mongo().
+        self.assertRaises(ValueError, field.validate, "not a dict")
+        self.assertRaises(ValueError, field.to_mongo, "not a dict")
+        self.assertRaises(ValueError, JSONDictField(use_header=False).validate, b"a")
+        self.assertRaises(ValueError, JSONDictField(use_header=False).to_mongo, b"a")
+
+    def test_save_invalid_value_raises_validation_error(self):
+        model_db = ModelWithJSONDictFieldDB()
+        model_db.result = "not a dict"
+        self.assertRaises(me.ValidationError, model_db.save)
+
     def test_existing_db_value_is_using_escaped_dict_field_compatibility(self):
         # Verify that backward and forward compatibility is handeld correctly and transparently
 
