@@ -14,13 +14,13 @@
 # limitations under the License.
 
 from __future__ import absolute_import
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db.policy import PolicyTypeReference, PolicyTypeDB, PolicyDB
 from st2common.persistence.base import Access, ContentPackResource
 
 
 class PolicyType(Access):
-    impl = MongoDBAccess(PolicyTypeDB)
+    impl = get_access(PolicyTypeDB)
 
     @classmethod
     def _get_impl(cls):
@@ -48,7 +48,7 @@ class PolicyType(Access):
 
 
 class Policy(ContentPackResource):
-    impl = MongoDBAccess(PolicyDB)
+    impl = get_access(PolicyDB)
 
     @classmethod
     def _get_impl(cls):

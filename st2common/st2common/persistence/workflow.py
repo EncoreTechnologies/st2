@@ -25,7 +25,7 @@ __all__ = ["WorkflowExecution", "TaskExecution"]
 
 
 class WorkflowExecution(persistence.StatusBasedResource):
-    impl = db.ChangeRevisionMongoDBAccess(wf_db_models.WorkflowExecutionDB)
+    impl = db.get_access(wf_db_models.WorkflowExecutionDB, change_revision=True)
     publisher = None
 
     @classmethod
@@ -45,7 +45,7 @@ class WorkflowExecution(persistence.StatusBasedResource):
 
 
 class TaskExecution(persistence.StatusBasedResource):
-    impl = db.ChangeRevisionMongoDBAccess(wf_db_models.TaskExecutionDB)
+    impl = db.get_access(wf_db_models.TaskExecutionDB, change_revision=True)
     publisher = None
 
     @classmethod

@@ -559,6 +559,12 @@ class MongoDBAccess(object):
     def get_all(self, *args, **kwargs):
         return self.query(*args, **kwargs)
 
+    def objects(self, *args, **kwargs):
+        """
+        Query without the null / datetime range filter processing done by query().
+        """
+        return self.model.objects(*args, **kwargs)
+
     def count(self, *args, **kwargs):
         result = self.model.objects(*args, **kwargs).count()
         log_query_and_profile_data_for_queryset(queryset=result)
@@ -782,6 +788,67 @@ class ChangeRevisionMongoDBAccess(MongoDBAccess):
         log_query_and_profile_data_for_queryset(queryset=qs)
 
         return count
+
+
+# Access classes per backend: (plain, change revision). Other backends are added here.
+DB_BACKEND_ACCESS_CLASSES = {
+    "mongodb": (MongoDBAccess, ChangeRevisionMongoDBAccess),
+}
+
+
+def get_backend_name():
+    """
+    Return the configured database backend ("mongodb" when config is not registered yet).
+    """
+    try:
+        return cfg.CONF.database.backend
+    except (cfg.NoSuchOptError, cfg.NoSuchGroupError):
+        return "mongodb"
+
+
+class DBAccessProxy(object):
+    """
+    Model access object which resolves the backend specific access class on first use.
+
+    Persistence classes are defined at import time, before the config is parsed, so the backend
+    can't be picked when this object is created.
+    """
+
+    def __init__(self, model, change_revision=False):
+        self.model = model
+        self._change_revision = change_revision
+        self._impls = {}
+
+    def get_impl(self):
+        backend = get_backend_name()
+        impl = self._impls.get(backend, None)
+
+        if impl is None:
+            if backend not in DB_BACKEND_ACCESS_CLASSES:
+                raise ValueError('Unsupported database backend "%s"' % (backend))
+
+            access_classes = DB_BACKEND_ACCESS_CLASSES[backend]
+            access_cls = (
+                access_classes[1] if self._change_revision else access_classes[0]
+            )
+            impl = access_cls(self.model)
+            self._impls[backend] = impl
+
+        return impl
+
+    def __getattr__(self, name):
+        # Private names (incl. copy / pickle hooks) are not forwarded
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        return getattr(self.get_impl(), name)
+
+
+def get_access(model, change_revision=False):
+    """
+    Return the access object for the provided model and the configured backend.
+    """
+    return DBAccessProxy(model, change_revision=change_revision)
 
 
 def get_host_names_for_uri_dict(uri_dict):

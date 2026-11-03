@@ -24,7 +24,7 @@ hashlib_kwargs = {} if sys.version_info[0:2] < (3, 9) else {"usedforsecurity": F
 
 import mongoengine as me
 
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 from st2common.fields import JSONDictEscapedFieldCompatibilityField
 from st2common.constants.types import ResourceType
@@ -159,8 +159,8 @@ class TriggerInstanceDB(stormbase.StormFoundationDB):
 
 
 # specialized access objects
-triggertype_access = MongoDBAccess(TriggerTypeDB)
-trigger_access = MongoDBAccess(TriggerDB)
-triggerinstance_access = MongoDBAccess(TriggerInstanceDB)
+triggertype_access = get_access(TriggerTypeDB)
+trigger_access = get_access(TriggerDB)
+triggerinstance_access = get_access(TriggerInstanceDB)
 
 MODELS = [TriggerTypeDB, TriggerDB, TriggerInstanceDB]

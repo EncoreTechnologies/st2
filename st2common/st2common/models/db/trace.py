@@ -27,7 +27,7 @@ from st2common.fields import ComplexDateTimeField
 from st2common.util import date as date_utils
 from st2common.constants.types import ResourceType
 
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 
 __all__ = ["TraceDB", "TraceComponentDB"]
 
@@ -127,6 +127,6 @@ class TraceDB(stormbase.StormFoundationDB, stormbase.UIDFieldMixin):
 
 
 # specialized access objects
-trace_access = MongoDBAccess(TraceDB)
+trace_access = get_access(TraceDB)
 
 MODELS = [TraceDB]

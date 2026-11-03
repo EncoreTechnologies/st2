@@ -225,7 +225,7 @@ class RuleViewController(
             else:
                 q |= Q(**query_args(ref))
         if q:
-            return model_persistence._get_impl().model.objects(q)
+            return model_persistence._get_impl().objects(q)
         return []
 
 

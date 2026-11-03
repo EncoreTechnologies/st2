@@ -18,7 +18,7 @@ import copy
 import mongoengine as me
 
 from st2common.persistence.action import Action
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 from st2common.constants.types import ResourceType
 from st2common.util.secrets import get_secret_parameters
@@ -169,7 +169,7 @@ class RuleDB(
         self.uid = self.get_uid()
 
 
-rule_access = MongoDBAccess(RuleDB)
-rule_type_access = MongoDBAccess(RuleTypeDB)
+rule_access = get_access(RuleDB)
+rule_type_access = get_access(RuleTypeDB)
 
 MODELS = [RuleDB]

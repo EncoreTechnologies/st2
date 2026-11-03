@@ -17,7 +17,7 @@ from __future__ import absolute_import
 import copy
 import mongoengine as me
 
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 from st2common.constants.types import ResourceType
 from st2common.constants.pack import PACK_VERSION_REGEX
@@ -107,8 +107,8 @@ class ConfigDB(stormbase.StormFoundationDB):
 
 
 # specialized access objects
-pack_access = MongoDBAccess(PackDB)
-config_schema_access = MongoDBAccess(ConfigSchemaDB)
-config_access = MongoDBAccess(ConfigDB)
+pack_access = get_access(PackDB)
+config_schema_access = get_access(ConfigSchemaDB)
+config_access = get_access(ConfigDB)
 
 MODELS = [PackDB, ConfigSchemaDB, ConfigDB]

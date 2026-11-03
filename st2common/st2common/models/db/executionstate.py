@@ -17,7 +17,7 @@ from __future__ import absolute_import
 import mongoengine as me
 
 from st2common import log as logging
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 
 __all__ = [
@@ -50,6 +50,6 @@ class ActionExecutionStateDB(stormbase.StormFoundationDB):
 
 
 # specialized access objects
-actionexecstate_access = MongoDBAccess(ActionExecutionStateDB)
+actionexecstate_access = get_access(ActionExecutionStateDB)
 
 MODELS = [ActionExecutionStateDB]

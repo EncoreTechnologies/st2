@@ -19,7 +19,7 @@ import copy
 import mongoengine as me
 
 from st2common import log as logging
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 from st2common.models.db.notification import NotificationSchema
 from st2common.fields import ComplexDateTimeField
@@ -146,6 +146,6 @@ class LiveActionDB(stormbase.StormFoundationDB):
 
 
 # specialized access objects
-liveaction_access = MongoDBAccess(LiveActionDB)
+liveaction_access = get_access(LiveActionDB)
 
 MODELS = [LiveActionDB]

@@ -16,7 +16,7 @@
 from __future__ import absolute_import
 import mongoengine as me
 
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 
 
@@ -135,9 +135,9 @@ class GroupToRoleMappingDB(stormbase.StormFoundationDB):
 
 
 # Specialized access objects
-role_access = MongoDBAccess(RoleDB)
-user_role_assignment_access = MongoDBAccess(UserRoleAssignmentDB)
-permission_grant_access = MongoDBAccess(PermissionGrantDB)
-group_to_role_mapping_access = MongoDBAccess(GroupToRoleMappingDB)
+role_access = get_access(RoleDB)
+user_role_assignment_access = get_access(UserRoleAssignmentDB)
+permission_grant_access = get_access(PermissionGrantDB)
+group_to_role_mapping_access = get_access(GroupToRoleMappingDB)
 
 MODELS = [RoleDB, UserRoleAssignmentDB, PermissionGrantDB, GroupToRoleMappingDB]
