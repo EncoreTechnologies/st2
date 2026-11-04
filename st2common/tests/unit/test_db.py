@@ -1058,3 +1058,18 @@ class KeyValuePairModelTestCase(DbTestCase):
             return
         for model_object in model_objects:
             model_object.delete()
+
+
+class KeyValuePairIndexesTestCase(DbTestCase):
+    ensure_indexes = True
+    ensure_indexes_models = [KeyValuePairDB]
+
+    def test_expire_timestamp_ttl_index(self):
+        # Expired keys are removed by MongoDB itself through this TTL index, not by st2 code.
+        indexes = KeyValuePairDB._get_collection().index_information()
+        ttl_indexes = [
+            index for index in indexes.values() if "expireAfterSeconds" in index
+        ]
+        self.assertEqual(len(ttl_indexes), 1)
+        self.assertEqual(ttl_indexes[0]["key"], [("expire_timestamp", 1)])
+        self.assertEqual(ttl_indexes[0]["expireAfterSeconds"], 0)

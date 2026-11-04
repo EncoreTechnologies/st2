@@ -56,6 +56,25 @@ class QueueConsumerTest(DbTestCase):
         self.assertTrue(mock_message.ack.called)
         self.assertFalse(FakeMessageHandler.process.called)
 
+    @mock.patch.object(BufferedDispatcher, "dispatch", mock.MagicMock())
+    @mock.patch.object(
+        FakeMessageHandler, "process", mock.MagicMock(side_effect=Exception("fail"))
+    )
+    def test_process_message_handler_error(self):
+        payload = FakeModelDB()
+        handler = get_handler()
+        mock_message = mock.MagicMock()
+        handler._queue_consumer.process(payload, mock_message)
+
+        # The message is acked before the handler runs and is never requeued.
+        self.assertTrue(mock_message.ack.called)
+        self.assertFalse(mock_message.reject.called)
+        self.assertFalse(mock_message.requeue.called)
+
+        # A handler error is only logged.
+        handler._queue_consumer._process_message(payload)
+        FakeMessageHandler.process.assert_called_once_with(payload)
+
 
 class FakeStagedMessageHandler(consumers.StagedMessageHandler):
     message_type = FakeModelDB
@@ -102,6 +121,22 @@ class StagedQueueConsumerTest(DbTestCase):
         handler._queue_consumer.process(payload, mock_message)
         self.assertTrue(mock_message.ack.called)
 
+    @mock.patch.object(BufferedDispatcher, "dispatch", mock.MagicMock())
+    @mock.patch.object(
+        FakeStagedMessageHandler,
+        "pre_ack_process",
+        mock.MagicMock(side_effect=Exception("fail")),
+    )
+    def test_process_message_pre_ack_error(self):
+        payload = FakeModelDB()
+        handler = get_staged_handler()
+        mock_message = mock.MagicMock()
+        handler._queue_consumer.process(payload, mock_message)
+        self.assertTrue(mock_message.ack.called)
+        self.assertFalse(mock_message.reject.called)
+        self.assertFalse(mock_message.requeue.called)
+        self.assertFalse(BufferedDispatcher.dispatch.called)
+
 
 class FakeVariableMessageHandler(consumers.VariableMessageHandler):
     def __init__(self, connection, queues):
@@ -139,3 +174,21 @@ class VariableMessageQueueConsumerTest(DbTestCase):
         handler._queue_consumer.process(payload, mock_message)
         self.assertTrue(mock_message.ack.called)
         self.assertFalse(FakeVariableMessageHandler.process.called)
+
+    @mock.patch.object(BufferedDispatcher, "dispatch", mock.MagicMock())
+    @mock.patch.object(
+        FakeVariableMessageHandler,
+        "handle_fake_model",
+        mock.MagicMock(side_effect=Exception("fail")),
+    )
+    def test_process_message_handler_error(self):
+        payload = FakeModelDB()
+        handler = get_variable_messages_handler()
+        mock_message = mock.MagicMock()
+        handler._queue_consumer.process(payload, mock_message)
+        self.assertTrue(mock_message.ack.called)
+        self.assertFalse(mock_message.reject.called)
+        self.assertFalse(mock_message.requeue.called)
+
+        handler._queue_consumer._process_message(payload)
+        FakeVariableMessageHandler.handle_fake_model.assert_called_once_with(payload)

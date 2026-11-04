@@ -23,6 +23,7 @@ monkey_patch()
 import mock
 import mongoengine
 import os
+import pymongo
 import tempfile
 
 from orquesta import statuses as wf_statuses
@@ -251,6 +252,61 @@ class OrquestaServiceRetryTest(st2tests.WorkflowTestCase):
             wf_svc.handle_action_execution_completion,
             tk1_ac_ex_db,
         )
+
+    @mock.patch.object(
+        wf_svc,
+        "update_task_state",
+        mock.MagicMock(side_effect=[pymongo.errors.AutoReconnect(), None]),
+    )
+    def test_no_retry_on_pymongo_auto_reconnect(self):
+        wf_meta = self.get_wf_fixture_meta_data(TEST_PACK_PATH, "sequential.yaml")
+        lv_ac_db = lv_db_models.LiveActionDB(action=wf_meta["name"])
+        lv_ac_db, ac_ex_db = ac_svc.request(lv_ac_db)
+        wf_ex_db = wf_db_access.WorkflowExecution.query(
+            action_execution=str(ac_ex_db.id)
+        )[0]
+
+        query_filters = {"workflow_execution": str(wf_ex_db.id), "task_id": "task1"}
+        tk1_ex_db = wf_db_access.TaskExecution.query(**query_filters)[0]
+        tk1_ac_ex_db = ex_db_access.ActionExecution.query(
+            task_execution=str(tk1_ex_db.id)
+        )[0]
+
+        # Errors raised by pymongo itself are not retried by the workflow service.
+        self.assertRaises(
+            pymongo.errors.AutoReconnect,
+            wf_svc.handle_action_execution_completion,
+            tk1_ac_ex_db,
+        )
+        self.assertEqual(wf_svc.update_task_state.call_count, 1)
+
+    @mock.patch.object(
+        wf_svc,
+        "update_task_state",
+        mock.MagicMock(
+            side_effect=[pymongo.errors.ServerSelectionTimeoutError(), None]
+        ),
+    )
+    def test_no_retry_on_pymongo_server_selection_timeout(self):
+        wf_meta = self.get_wf_fixture_meta_data(TEST_PACK_PATH, "sequential.yaml")
+        lv_ac_db = lv_db_models.LiveActionDB(action=wf_meta["name"])
+        lv_ac_db, ac_ex_db = ac_svc.request(lv_ac_db)
+        wf_ex_db = wf_db_access.WorkflowExecution.query(
+            action_execution=str(ac_ex_db.id)
+        )[0]
+
+        query_filters = {"workflow_execution": str(wf_ex_db.id), "task_id": "task1"}
+        tk1_ex_db = wf_db_access.TaskExecution.query(**query_filters)[0]
+        tk1_ac_ex_db = ex_db_access.ActionExecution.query(
+            task_execution=str(tk1_ex_db.id)
+        )[0]
+
+        self.assertRaises(
+            pymongo.errors.ServerSelectionTimeoutError,
+            wf_svc.handle_action_execution_completion,
+            tk1_ac_ex_db,
+        )
+        self.assertEqual(wf_svc.update_task_state.call_count, 1)
 
     @mock.patch.object(
         wf_db_access.WorkflowExecution,
