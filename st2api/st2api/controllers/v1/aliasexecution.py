@@ -22,6 +22,7 @@ from st2api.controllers.base import BaseRestControllerMixin
 from st2common import log as logging
 from st2common.exceptions.actionalias import ActionAliasAmbiguityException
 from st2common.exceptions.db import StackStormDBObjectNotFoundError
+from st2common.exceptions import param as param_exc
 from st2common.models.api.action import ActionAliasAPI
 from st2common.models.api.action import AliasMatchAndExecuteInputAPI
 from st2common.models.api.auth import get_system_username
@@ -37,8 +38,10 @@ from st2common.models.utils.action_alias_utils import inject_immutable_parameter
 from st2common.persistence.actionalias import ActionAlias
 from st2common.services import action as action_service
 from st2common.util import action_db as action_utils
+from st2common.util import param as param_utils
 from st2common.util import reference
 from st2common.util.actionalias_matching import get_matching_alias
+from st2common.util.jinja import is_jinja_expression
 from st2common.util.jinja import render_values as render
 from st2common.rbac.types import PermissionType
 from st2common.rbac.backends import get_rbac_backend
@@ -61,6 +64,58 @@ def cast_array(value):
 CAST_OVERRIDES = {
     "array": cast_array,
 }
+
+STRING_PARAM_TYPES = (None, "string", "raw_string")
+
+
+def render_jinja_param_defaults(action_db, params, context):
+    # User supplied params are passed as plain values and never rendered.
+    try:
+        runnertype_db = action_utils.get_runnertype_by_name(
+            action_db.runner_type["name"]
+        )
+        runner_parameters = runnertype_db.runner_parameters or {}
+    except StackStormDBObjectNotFoundError:
+        runner_parameters = {}
+
+    action_parameters = action_db.parameters or {}
+    schemas = [action_parameters, runner_parameters]
+
+    names = set()
+    for schema in schemas:
+        for name, param_schema in six.iteritems(schema):
+            if (
+                name not in params
+                and param_schema.get("type") not in STRING_PARAM_TYPES
+                and not param_schema.get("immutable", False)
+                and is_jinja_expression(param_schema.get("default"))
+            ):
+                names.add(name)
+
+    if not names:
+        return params
+
+    action_context = dict(context, pack=action_db.pack)
+    try:
+        runner_params, action_params = param_utils.render_final_params(
+            runner_parameters, action_parameters, params, action_context
+        )
+    except param_exc.ParamException:
+        raise
+    except Exception as e:
+        raise ValueError(
+            'Failed to cast the rendered default value of parameter(s) "%s": %s'
+            % ('", "'.join(sorted(names)), six.text_type(e))
+        )
+
+    rendered = dict(runner_params)
+    rendered.update(action_params)
+
+    params = dict(params)
+    for name in names:
+        params[name] = rendered[name]
+
+    return params
 
 
 class ActionAliasExecutionController(BaseRestControllerMixin):
@@ -280,6 +335,9 @@ class ActionAliasExecutionController(BaseRestControllerMixin):
                     "action_alias_ref": reference.get_ref_from_model(action_alias_db),
                     "user": get_system_username(),
                 }
+            params = render_jinja_param_defaults(
+                action_db=action_db, params=params, context=context
+            )
             liveaction = LiveActionDB(
                 action=action_alias_db.action_ref,
                 context=context,
@@ -293,7 +351,7 @@ class ActionAliasExecutionController(BaseRestControllerMixin):
             return ActionExecutionAPI.from_model(
                 action_execution_db, mask_secrets=mask_secrets
             )
-        except ValueError as e:
+        except (ValueError, param_exc.ParamException) as e:
             LOG.exception("Unable to execute action.")
             abort(http_client.BAD_REQUEST, six.text_type(e))
         except jsonschema.ValidationError as e:

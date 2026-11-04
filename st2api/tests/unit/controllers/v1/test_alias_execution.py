@@ -20,6 +20,8 @@ from oslo_config import cfg
 
 from st2common.constants.action import LIVEACTION_STATUS_SUCCEEDED
 from st2common.models.db.execution import ActionExecutionDB
+from st2common.models.db.keyvalue import KeyValuePairDB
+from st2common.persistence.keyvalue import KeyValuePair
 from st2common.services import action as action_service
 from st2tests.api import SUPER_SECRET_PARAMETER
 from st2tests.fixtures.aliases.fixture import PACK_NAME as FIXTURES_PACK
@@ -38,8 +40,15 @@ TEST_MODELS = {
         "alias_fixes1.yaml",
         "alias_fixes2.yaml",
         "alias_match_multiple.yaml",
+        "alias_with_st2kv_defaults.yaml",
     ],
-    "actions": ["action1.yaml", "action2.yaml", "action3.yaml", "action4.yaml"],
+    "actions": [
+        "action1.yaml",
+        "action2.yaml",
+        "action3.yaml",
+        "action4.yaml",
+        "action5.yaml",
+    ],
     "runners": ["runner1.yaml"],
 }
 
@@ -75,6 +84,20 @@ class AliasExecutionTestCase(FunctionalTest):
         cls.alias_with_undefined_jinja_in_ack_format = cls.models["aliases"][
             "alias_with_undefined_jinja_in_ack_format.yaml"
         ]
+        cls.alias_with_st2kv_defaults = cls.models["aliases"][
+            "alias_with_st2kv_defaults.yaml"
+        ]
+
+    def _register_st2kv_default_values(self):
+        register_items = [
+            {"name": "alias_test_int", "value": "5"},
+            {"name": "alias_test_bool", "value": "true"},
+            {"name": "alias_test_array", "value": '["a", "b"]'},
+            {"name": "alias_test_str", "value": "from datastore"},
+        ]
+        kvps = [KeyValuePair.add_or_update(KeyValuePairDB(**x)) for x in register_items]
+        for kvp in kvps:
+            self.addCleanup(KeyValuePair.delete, kvp)
 
     @mock.patch.object(action_service, "request", return_value=(None, EXECUTION))
     def test_basic_execution(self, request):
@@ -375,6 +398,51 @@ class AliasExecutionTestCase(FunctionalTest):
             resp.json["results"][0]["actionalias"]["ref"],
             "aliases.alias_with_undefined_jinja_in_ack_format",
         )
+
+    @mock.patch.object(action_service, "request", return_value=(None, EXECUTION))
+    def test_execution_renders_st2kv_defaults_of_non_string_params(self, request):
+        self._register_st2kv_default_values()
+
+        command = "st2kv defaults 7"
+        post_resp = self._do_post(
+            alias_execution=self.alias_with_st2kv_defaults, command=command
+        )
+        self.assertEqual(post_resp.status_int, 201)
+        expected_parameters = {
+            "int_param": 7,
+            "bool_param": True,
+            "array_param": ["a", "b"],
+        }
+        self.assertEqual(request.call_args[0][0].parameters, expected_parameters)
+
+    @mock.patch.object(action_service, "request", return_value=(None, EXECUTION))
+    def test_execution_doesnt_render_jinja_in_user_supplied_params(self, request):
+        self._register_st2kv_default_values()
+
+        command = 'st2kv defaults 7 str_param="{{ st2kv.system.alias_test_str }}"'
+        post_resp = self._do_post(
+            alias_execution=self.alias_with_st2kv_defaults, command=command
+        )
+        self.assertEqual(post_resp.status_int, 201)
+
+        parameters = request.call_args[0][0].parameters
+        self.assertEqual(parameters["str_param"], "{{ st2kv.system.alias_test_str }}")
+        self.assertEqual(parameters["bool_param"], True)
+
+    @mock.patch.object(action_service, "request", return_value=(None, EXECUTION))
+    def test_execution_st2kv_default_of_non_string_param_render_failure(self, request):
+        command = "st2kv defaults 7"
+        post_resp = self._do_post(
+            alias_execution=self.alias_with_st2kv_defaults,
+            command=command,
+            expect_errors=True,
+        )
+        self.assertEqual(post_resp.status_int, 400)
+        self.assertIn(
+            "Failed to cast the rendered default value of parameter(s)",
+            post_resp.json["faultstring"],
+        )
+        self.assertFalse(request.called)
 
     def _do_post(
         self,
