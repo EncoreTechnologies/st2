@@ -1,0 +1,20 @@
+---
+  name: "action5"
+  description: "Action with non-string parameters which default to datastore values"
+  runner_type: "noop"
+  pack: "wolfpack"
+  entry_point: "/tmp/test/action2.sh"
+  enabled: true
+  parameters:
+    int_param:
+      type: "integer"
+      default: "{{ st2kv.system.alias_test_int }}"
+    bool_param:
+      type: "boolean"
+      default: "{{ st2kv.system.alias_test_bool }}"
+    array_param:
+      type: "array"
+      default: "{{ st2kv.system.alias_test_array }}"
+    str_param:
+      type: "string"
+      default: "{{ st2kv.system.alias_test_str }}"

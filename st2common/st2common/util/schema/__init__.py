@@ -61,26 +61,6 @@ SCHEMAS = {
     ),
 }
 
-# Registry that maps the draft-04 URI to our local custom schema.
-# All three local schema files (custom.json, action_params.json, action_output_schema.json)
-# claim "id": "http://json-schema.org/draft-04/schema#" but override "required" to accept
-# boolean values (Draft 3 style). In older jsonschema (< 4.18), RefResolver used custom.json
-# (the CustomValidator meta_schema) for all $ref: "#" resolutions. In jsonschema >= 4.18,
-# the referencing library resolves that URI to the official draft-04 meta-schema instead,
-# which requires "required" to be an array. This registry restores the old behavior by
-# mapping the URI back to custom.json.
-_LOCAL_SCHEMA_REGISTRY = Registry().with_resources(
-    [
-        (
-            "http://json-schema.org/draft-04/schema#",
-            Resource.from_contents(
-                SCHEMAS["custom"],
-                default_specification=ref_jsonschema.DRAFT4,
-            ),
-        )
-    ]
-)
-
 SCHEMA_ANY_TYPE = {
     "anyOf": [
         {"type": "array"},
@@ -127,6 +107,30 @@ def get_action_parameters_schema(additional_properties=False):
     return get_draft_schema(
         version="action_params", additional_properties=additional_properties
     )
+
+
+# Registry that maps the draft-04 URI to our local custom schema.
+# All three local schema files (custom.json, action_params.json, action_output_schema.json)
+# claim "id": "http://json-schema.org/draft-04/schema#" but override "required" to accept
+# boolean values (Draft 3 style). In older jsonschema (< 4.18), RefResolver used custom.json
+# (the CustomValidator meta_schema) for all $ref: "#" resolutions. In jsonschema >= 4.18,
+# the referencing library resolves that URI to the official draft-04 meta-schema instead,
+# which requires "required" to be an array. This registry restores the old behavior by
+# mapping the URI back to custom.json.
+# It uses the same permissive copy as the CustomValidator meta_schema (no top-level
+# additionalProperties), as the old resolver did. The strict custom.json rejects keywords
+# it doesn't list, such as "$ref", in nested schemas (e.g. pack config schemas).
+_LOCAL_SCHEMA_REGISTRY = Registry().with_resources(
+    [
+        (
+            "http://json-schema.org/draft-04/schema#",
+            Resource.from_contents(
+                get_draft_schema(version="custom", additional_properties=True),
+                default_specification=ref_jsonschema.DRAFT4,
+            ),
+        )
+    ]
+)
 
 
 CustomValidator = create(

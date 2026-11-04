@@ -481,3 +481,37 @@ class JSONSchemaTestCase(TestCase):
         util_schema.validate(
             instance=instance, schema=TEST_SCHEMA_6, cls=validator, use_default=True
         )
+
+    def test_ref_allowed_in_nested_parameter_schema(self):
+        # Pack config schemas (validated like ConfigSchemaAPI.attributes) may use "$ref"
+        # inside nested schemas. "$ref": "#" in the meta-schema must resolve to the
+        # permissive custom schema, not the strict one with additionalProperties false.
+        schema = {
+            "type": "object",
+            "patternProperties": {r"^\w+$": util_schema.get_action_parameters_schema()},
+            "additionalProperties": False,
+        }
+        instance = {
+            "connections": {
+                "type": "object",
+                "required": True,
+                "patternProperties": {
+                    r"^\w+": {"$ref": "#/properties/connection"},
+                },
+                "additionalProperties": False,
+            },
+            "connection": {
+                "type": "object",
+                "properties": {
+                    "host": {"type": "string", "required": True},
+                },
+                "additionalProperties": False,
+            },
+        }
+        util_schema.validate(
+            instance=instance,
+            schema=schema,
+            cls=util_schema.CustomValidator,
+            use_default=True,
+            allow_default_none=True,
+        )

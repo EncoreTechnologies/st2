@@ -136,7 +136,7 @@ def wsgi_server(
         )
     elif _state.library == "gevent":
         server = _state.gevent.pywsgi.WSGIServer(
-            socket, app, spawn=custom_pool, log=log
+            socket, app, spawn=custom_pool or "default", log=log
         )
         server.serve_forever()
     else:
