@@ -121,3 +121,44 @@ class WorkflowExecutionModelTest(st2tests.DbTestCase):
             wf_db_access.WorkflowExecution.get_by_id,
             doc_id,
         )
+
+    def test_workflow_execution_update_reads(self):
+        initial = wf_db_models.WorkflowExecutionDB()
+        initial.action_execution = uuid.uuid4().hex
+        initial.graph = {"var1": "foobar"}
+        initial.status = "requested"
+        created = wf_db_access.WorkflowExecution.add_or_update(initial)
+        doc_id = created.id
+
+        get_by_id = wf_db_access.WorkflowExecution.get_by_id
+
+        # By default the record is read back once after the write, with no read before it.
+        with mock.patch.object(
+            wf_db_access.WorkflowExecution,
+            "get_by_id",
+            mock.MagicMock(side_effect=get_by_id),
+        ) as mock_get_by_id:
+            created.status = "running"
+            retrieved = wf_db_access.WorkflowExecution.update(created, publish=False)
+
+        self.assertEqual(mock_get_by_id.call_count, 1)
+        self.assertIsNot(retrieved, created)
+        self.assertEqual(retrieved.status, "running")
+        self.assertEqual(retrieved.rev, get_by_id(doc_id).rev)
+
+        # With refresh off the saved object itself is returned and nothing is read.
+        with mock.patch.object(
+            wf_db_access.WorkflowExecution,
+            "get_by_id",
+            mock.MagicMock(side_effect=get_by_id),
+        ) as mock_get_by_id:
+            retrieved.status = "succeeded"
+            updated = wf_db_access.WorkflowExecution.update(
+                retrieved, publish=False, refresh=False
+            )
+
+        self.assertEqual(mock_get_by_id.call_count, 0)
+        self.assertIs(updated, retrieved)
+        stored = get_by_id(doc_id)
+        self.assertEqual(stored.status, "succeeded")
+        self.assertEqual(stored.rev, updated.rev)
