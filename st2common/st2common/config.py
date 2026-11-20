@@ -196,6 +196,12 @@ def register_opts(ignore_errors=False):
     do_register_opts(webui_opts, "webui", ignore_errors)
 
     db_opts = [
+        cfg.StrOpt(
+            "backend",
+            default="mongodb",
+            choices=["mongodb", "postgresql"],
+            help="Database backend to use. For postgresql, also set port (e.g. 5432).",
+        ),
         cfg.StrOpt("host", default="127.0.0.1", help="host of db server"),
         cfg.IntOpt("port", default=27017, help="port of db server"),
         cfg.StrOpt("db_name", default="st2", help="name of database"),

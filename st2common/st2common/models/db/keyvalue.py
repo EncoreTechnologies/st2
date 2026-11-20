@@ -18,7 +18,7 @@ import mongoengine as me
 
 from st2common.constants.keyvalue import FULL_SYSTEM_SCOPE
 from st2common.constants.types import ResourceType
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 
 __all__ = ["KeyValuePairDB"]
@@ -54,6 +54,6 @@ class KeyValuePairDB(stormbase.StormBaseDB, stormbase.UIDFieldMixin):
 
 
 # specialized access objects
-keyvaluepair_access = MongoDBAccess(KeyValuePairDB)
+keyvaluepair_access = get_access(KeyValuePairDB)
 
 MODELS = [KeyValuePairDB]

@@ -62,6 +62,7 @@ from st2common.constants.runners import COMMON_ACTION_ENV_VARIABLES
 from st2common.constants.system import AUTH_TOKEN_ENV_VARIABLE_NAME
 from st2common.exceptions.db import StackStormDBObjectConflictError
 from st2common.models.db import db_setup, db_teardown, db_ensure_indexes
+from st2common.models.db import get_backend_module, get_backend_name
 from st2common.models.db.execution_queue import ActionExecutionSchedulingQueueItemDB
 from st2common.bootstrap.base import ResourceRegistrar
 from st2common.bootstrap.configsregistrar import ConfigsRegistrar
@@ -116,6 +117,9 @@ __all__ = [
     "get_resources_path",
     "blocking_eventlet_spawn",
     "make_mock_stream_readline",
+    "skip_unless_mongodb",
+    "skip_unless_postgresql",
+    "get_stored_document",
 ]
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -199,6 +203,29 @@ class EventletTestCase(GreenThreadTestCase):
     """Deprecated alias for GreenThreadTestCase, kept for external callers."""
 
 
+# For tests of MongoDB specific behaviour (raw collections, connection options, indexes, ...).
+# Tests select the backend with the ST2_DATABASE__BACKEND environment variable, which is also
+# what this checks, since the config isn't parsed yet when test modules are imported.
+skip_unless_mongodb = unittest.skipIf(
+    os.environ.get("ST2_DATABASE__BACKEND", "mongodb") != "mongodb",
+    "Tests MongoDB specific behaviour",
+)
+skip_unless_postgresql = unittest.skipIf(
+    os.environ.get("ST2_DATABASE__BACKEND", "mongodb") != "postgresql",
+    "Tests PostgreSQL specific behaviour",
+)
+
+
+def get_stored_document(model, doc_id):
+    """
+    Return a document as stored by the database backend (MongoDB: the raw collection document).
+    """
+    if get_backend_name() == "mongodb":
+        return model._get_collection().find_one({"_id": doc_id})
+
+    return get_backend_module().get_stored_document(model, doc_id)
+
+
 class BaseDbTestCase(BaseTestCase):
     # True to synchronously ensure indexes after db_setup is called - NOTE: This is only needed
     # with older MongoDB versions. With recent versions this is not needed for the tests anymore
@@ -232,6 +259,17 @@ class BaseDbTestCase(BaseTestCase):
             if hasattr(cfg.CONF.database, "password")
             else None
         )
+
+        if get_backend_name() != "mongodb":
+            # MongoDB creates the database on first use, other backends don't
+            get_backend_module().create_database(
+                cfg.CONF.database.db_name,
+                cfg.CONF.database.host,
+                cfg.CONF.database.port,
+                username=username,
+                password=password,
+            )
+
         cls.db_connection = db_setup(
             cfg.CONF.database.db_name,
             cfg.CONF.database.host,

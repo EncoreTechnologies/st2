@@ -254,6 +254,15 @@ def db_setup(
     authentication_mechanism=None,
     ssl_match_hostname=True,  # deprecated
 ):
+    if get_backend_name() != "mongodb":
+        return get_backend_module().db_setup(
+            db_name,
+            db_host,
+            db_port,
+            username=username,
+            password=password,
+            ensure_indexes=ensure_indexes,
+        )
 
     connection = _db_connect(
         db_name,
@@ -299,6 +308,9 @@ def db_ensure_indexes(model_classes=None):
 
     if not model_classes:
         model_classes = get_model_classes()
+
+    if get_backend_name() != "mongodb":
+        return get_backend_module().db_ensure_indexes(model_classes)
 
     for model_class in model_classes:
         class_name = model_class.__name__
@@ -405,6 +417,9 @@ def drop_obsolete_types_indexes(model_class):
 
 
 def db_teardown():
+    if get_backend_name() != "mongodb":
+        return get_backend_module().db_teardown()
+
     mongoengine.connection.disconnect()
 
 
@@ -424,6 +439,10 @@ def db_cleanup(
     authentication_mechanism=None,
     ssl_match_hostname=True,  # deprecated
 ):
+    if get_backend_name() != "mongodb":
+        return get_backend_module().db_cleanup(
+            db_name, db_host, db_port, username=username, password=password
+        )
 
     connection = _db_connect(
         db_name,
@@ -532,7 +551,7 @@ class MongoDBAccess(object):
 
         args = self._process_arg_filters(args)
 
-        instances = self.model.objects(*args, **kwargs)
+        instances = self.objects(*args, **kwargs)
 
         if exclude_fields:
             instances = instances.exclude(*exclude_fields)
@@ -559,8 +578,14 @@ class MongoDBAccess(object):
     def get_all(self, *args, **kwargs):
         return self.query(*args, **kwargs)
 
+    def objects(self, *args, **kwargs):
+        """
+        Query without the null / datetime range filter processing done by query().
+        """
+        return self.model.objects(*args, **kwargs)
+
     def count(self, *args, **kwargs):
-        result = self.model.objects(*args, **kwargs).count()
+        result = self.objects(*args, **kwargs).count()
         log_query_and_profile_data_for_queryset(queryset=result)
         return result
 
@@ -591,7 +616,7 @@ class MongoDBAccess(object):
         )
         filters = self._process_null_filters(filters=filters)
 
-        result = self.model.objects(*args, **filters)
+        result = self.objects(*args, **filters)
 
         if exclude_fields:
             try:
@@ -620,12 +645,12 @@ class MongoDBAccess(object):
 
     def distinct(self, *args, **kwargs):
         field = kwargs.pop("field")
-        result = self.model.objects(**kwargs).distinct(field)
+        result = self.objects(**kwargs).distinct(field)
         log_query_and_profile_data_for_queryset(queryset=result)
         return result
 
     def aggregate(self, *args, **kwargs):
-        return self.model.objects(**kwargs)._collection.aggregate(*args, **kwargs)
+        return self.objects(**kwargs)._collection.aggregate(*args, **kwargs)
 
     def insert(self, instance):
         instance = self.model.objects.insert(instance)
@@ -645,7 +670,7 @@ class MongoDBAccess(object):
         """
         Delete objects by query and return number of deleted objects.
         """
-        qs = self.model.objects.filter(*args, **query)
+        qs = self.objects(*args, **query)
         count = qs.delete()
         log_query_and_profile_data_for_queryset(queryset=qs)
 
@@ -777,11 +802,103 @@ class ChangeRevisionMongoDBAccess(MongoDBAccess):
         """
         Delete objects by query and return number of deleted objects.
         """
-        qs = self.model.objects.filter(*args, **query)
+        qs = self.objects(*args, **query)
         count = qs.delete()
         log_query_and_profile_data_for_queryset(queryset=qs)
 
         return count
+
+
+# Access classes per backend: (plain, change revision). Other backends are loaded on first use
+# from DB_BACKEND_MODULES, so a MongoDB install never imports their dependencies.
+DB_BACKEND_ACCESS_CLASSES = {
+    "mongodb": (MongoDBAccess, ChangeRevisionMongoDBAccess),
+}
+
+DB_BACKEND_MODULES = {
+    "postgresql": "st2common.models.db.postgres",
+}
+
+
+def get_backend_name():
+    """
+    Return the configured database backend ("mongodb" when config is not registered yet).
+    """
+    try:
+        return cfg.CONF.database.backend
+    except (cfg.NoSuchOptError, cfg.NoSuchGroupError):
+        return "mongodb"
+
+
+def get_backend_module(backend=None):
+    """
+    Return the module implementing a non-MongoDB backend (db_setup, access classes, ...).
+    """
+    backend = backend or get_backend_name()
+
+    if backend not in DB_BACKEND_MODULES:
+        raise ValueError('Unsupported database backend "%s"' % (backend))
+
+    module = importlib.import_module(DB_BACKEND_MODULES[backend])
+    DB_BACKEND_ACCESS_CLASSES.setdefault(backend, module.ACCESS_CLASSES)
+    return module
+
+
+def is_backend_connection_error(exc):
+    """
+    True if exc is a connection error of the configured non-MongoDB backend.
+    """
+    backend = get_backend_name()
+
+    if backend == "mongodb":
+        return False
+
+    return get_backend_module(backend).is_connection_error(exc)
+
+
+class DBAccessProxy(object):
+    """
+    Model access object which resolves the backend specific access class on first use.
+
+    Persistence classes are defined at import time, before the config is parsed, so the backend
+    can't be picked when this object is created.
+    """
+
+    def __init__(self, model, change_revision=False):
+        self.model = model
+        self._change_revision = change_revision
+        self._impls = {}
+
+    def get_impl(self):
+        backend = get_backend_name()
+        impl = self._impls.get(backend, None)
+
+        if impl is None:
+            if backend not in DB_BACKEND_ACCESS_CLASSES:
+                get_backend_module(backend)
+
+            access_classes = DB_BACKEND_ACCESS_CLASSES[backend]
+            access_cls = (
+                access_classes[1] if self._change_revision else access_classes[0]
+            )
+            impl = access_cls(self.model)
+            self._impls[backend] = impl
+
+        return impl
+
+    def __getattr__(self, name):
+        # Private names (incl. copy / pickle hooks) are not forwarded
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        return getattr(self.get_impl(), name)
+
+
+def get_access(model, change_revision=False):
+    """
+    Return the access object for the provided model and the configured backend.
+    """
+    return DBAccessProxy(model, change_revision=change_revision)
 
 
 def get_host_names_for_uri_dict(uri_dict):

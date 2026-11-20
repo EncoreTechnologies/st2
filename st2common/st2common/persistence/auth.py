@@ -21,14 +21,14 @@ from st2common.exceptions.auth import (
     AmbiguousUserError,
     NoNicknameOriginProvidedError,
 )
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db.auth import UserDB, TokenDB, ApiKeyDB
 from st2common.persistence.base import Access
 from st2common.util import hash as hash_utils
 
 
 class User(Access):
-    impl = MongoDBAccess(UserDB)
+    impl = get_access(UserDB)
 
     @classmethod
     def get(cls, username):
@@ -60,7 +60,7 @@ class User(Access):
 
 
 class Token(Access):
-    impl = MongoDBAccess(TokenDB)
+    impl = get_access(TokenDB)
 
     @classmethod
     def _get_impl(cls):
@@ -93,7 +93,7 @@ class Token(Access):
 
 
 class ApiKey(Access):
-    impl = MongoDBAccess(ApiKeyDB)
+    impl = get_access(ApiKeyDB)
 
     @classmethod
     def _get_impl(cls):

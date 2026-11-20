@@ -24,6 +24,9 @@ pyyaml
 pymongo
 # used for optional network level compression for mongodb
 zstandard
+# used by the optional postgresql database backend
+sqlalchemy
+psycopg
 # mention cffi used by cryptography so we can control version
 cffi
 cryptography

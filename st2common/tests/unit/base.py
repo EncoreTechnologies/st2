@@ -95,7 +95,7 @@ class FakeModelDB(stormbase.StormBaseDB):
 
 
 class FakeModel(Access):
-    impl = db.MongoDBAccess(FakeModelDB)
+    impl = db.get_access(FakeModelDB)
 
     @classmethod
     def _get_impl(cls):
@@ -115,7 +115,7 @@ class ChangeRevFakeModelDB(stormbase.StormBaseDB, stormbase.ChangeRevisionFieldM
 
 
 class ChangeRevFakeModel(Access):
-    impl = db.ChangeRevisionMongoDBAccess(ChangeRevFakeModelDB)
+    impl = db.get_access(ChangeRevFakeModelDB, change_revision=True)
 
     @classmethod
     def _get_impl(cls):

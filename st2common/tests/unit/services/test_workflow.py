@@ -18,6 +18,7 @@ from __future__ import absolute_import
 import copy
 import mock
 
+from orquesta import conducting
 from orquesta import exceptions as orquesta_exc
 from orquesta.specs import loader as specs_loader
 from orquesta import statuses as wf_statuses
@@ -337,6 +338,55 @@ class WorkflowExecutionServiceTest(st2tests.WorkflowTestCase):
 
         # Check that a new task is executed.
         self.assert_task_running("task2", 0)
+
+    def _request_wf_ex_for_next_tasks(self):
+        wf_meta = self.get_wf_fixture_meta_data(TEST_PACK_PATH, "sequential.yaml")
+        lv_ac_db = lv_db_models.LiveActionDB(action=wf_meta["name"])
+        lv_ac_db, ac_ex_db = action_service.create_request(lv_ac_db)
+        wf_def = self.get_wf_def(TEST_PACK_PATH, wf_meta)
+        st2_ctx = self.mock_st2_context(ac_ex_db)
+        return workflow_service.request(wf_def, ac_ex_db, st2_ctx)
+
+    def _get_task_count(self, wf_ex_db, task_id):
+        return len(
+            wf_db_access.TaskExecution.query(
+                workflow_execution=str(wf_ex_db.id), task_id=task_id
+            )
+        )
+
+    def test_request_next_tasks_debug_serialize_skipped_when_debug_off(self):
+        wf_ex_db = self._request_wf_ex_for_next_tasks()
+
+        with mock.patch.object(
+            workflow_service.LOG, "isEnabledFor", mock.MagicMock(return_value=False)
+        ):
+            with mock.patch.object(
+                conducting.WorkflowConductor,
+                "serialize",
+                autospec=True,
+                side_effect=conducting.WorkflowConductor.serialize,
+            ) as mock_serialize:
+                workflow_service.request_next_tasks(wf_ex_db)
+
+        self.assertEqual(mock_serialize.call_count, 0)
+        self.assertEqual(self._get_task_count(wf_ex_db, "task1"), 1)
+
+    def test_request_next_tasks_debug_serialize_when_debug_on(self):
+        wf_ex_db = self._request_wf_ex_for_next_tasks()
+
+        with mock.patch.object(
+            workflow_service.LOG, "isEnabledFor", mock.MagicMock(return_value=True)
+        ):
+            with mock.patch.object(
+                conducting.WorkflowConductor,
+                "serialize",
+                autospec=True,
+                side_effect=conducting.WorkflowConductor.serialize,
+            ) as mock_serialize:
+                workflow_service.request_next_tasks(wf_ex_db)
+
+        self.assertGreater(mock_serialize.call_count, 0)
+        self.assertEqual(self._get_task_count(wf_ex_db, "task1"), 1)
 
     def test_evaluate_action_execution_delay(self):
         base_task_ex_req = {"task_id": "task1", "task_name": "task1", "route": 0}

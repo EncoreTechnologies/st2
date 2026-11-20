@@ -48,10 +48,16 @@ from st2common.garbage_collection.trigger_instances import purge_trigger_instanc
 from st2common.garbage_collection.trace import purge_traces
 from st2common.garbage_collection.token import purge_tokens
 from st2common.garbage_collection.rule_enforcement import purge_rule_enforcements
+from st2common.garbage_collection.keyvalues import purge_expired_keys
+from st2common.models.db import get_backend_name
 
 __all__ = ["GarbageCollectorService"]
 
 LOG = logging.getLogger(__name__)
+
+# How often expired datastore items are deleted on backends without a TTL index (MongoDB's TTL
+# monitor runs every 60 seconds)
+EXPIRED_KEYS_PURGE_INTERVAL = 60
 
 
 class GarbageCollectorService(object):
@@ -102,6 +108,9 @@ class GarbageCollectorService(object):
 
         success_exception_cls = concurrency.get_greenlet_exit_exception_class()
 
+        if get_backend_name() != "mongodb":
+            concurrency.spawn(self._expired_keys_loop)
+
         try:
             self._main_loop()
         except success_exception_cls:
@@ -133,6 +142,15 @@ class GarbageCollectorService(object):
                 % (self._collection_interval)
             )
             concurrency.sleep(self._collection_interval)
+
+    def _expired_keys_loop(self):
+        while self._running:
+            try:
+                purge_expired_keys(logger=LOG, timestamp=get_datetime_utc_now())
+            except Exception as e:
+                LOG.exception("Failed to delete expired datastore items: %s" % (str(e)))
+
+            concurrency.sleep(EXPIRED_KEYS_PURGE_INTERVAL)
 
     def _validate_ttl_values(self):
         """

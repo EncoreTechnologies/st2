@@ -20,6 +20,7 @@ import datetime
 import bson
 
 from st2tests import DbTestCase
+from st2tests.base import get_stored_document
 from st2common.util import date as date_utils
 from st2common.exceptions.db import StackStormDBObjectNotFoundError
 from tests.unit.base import FakeModel, FakeModelDB
@@ -134,8 +135,8 @@ class TestPersistence(DbTestCase):
         obj2 = self.access.update(obj2, publish=False, set__index=None)
 
         # Check what is actually stored for both documents.
-        raw1 = FakeModelDB._get_collection().find_one({"_id": obj1.id})
-        raw2 = FakeModelDB._get_collection().find_one({"_id": obj2.id})
+        raw1 = get_stored_document(FakeModelDB, obj1.id)
+        raw2 = get_stored_document(FakeModelDB, obj2.id)
         self.assertNotIn("index", raw1)
         self.assertIn("index", raw2)
         self.assertIsNone(raw2["index"])

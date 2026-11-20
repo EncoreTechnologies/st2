@@ -16,7 +16,7 @@
 from __future__ import absolute_import
 import mongoengine as me
 
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 from st2common.constants.types import ResourceType
 
@@ -70,6 +70,6 @@ class SensorTypeDB(
         self.uid = self.get_uid()
 
 
-sensor_type_access = MongoDBAccess(SensorTypeDB)
+sensor_type_access = get_access(SensorTypeDB)
 
 MODELS = [SensorTypeDB]

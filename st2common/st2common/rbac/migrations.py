@@ -18,7 +18,9 @@ from mongoengine import NotUniqueError
 
 from st2common import log as logging
 from st2common.rbac.types import SystemRole
+from st2common.models.db import get_backend_name
 from st2common.models.db.rbac import RoleDB
+from st2common.models.db.rbac import role_access
 from st2common.exceptions.db import StackStormDBObjectConflictError
 
 LOG = logging.getLogger(__name__)
@@ -43,7 +45,10 @@ def insert_system_roles():
         role_db = RoleDB(name=role_name, description=description, system=True)
 
         try:
-            role_db.save()
+            if get_backend_name() == "mongodb":
+                role_db.save()
+            else:
+                role_access.add_or_update(role_db)
         except (StackStormDBObjectConflictError, NotUniqueError):
             # Role already exists error is not fatal
             pass

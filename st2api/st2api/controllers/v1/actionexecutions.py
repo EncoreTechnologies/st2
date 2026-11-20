@@ -260,9 +260,7 @@ class ActionExecutionsControllerMixin(BaseRestControllerMixin):
         :rtype: ``dict``
         """
         fields = ["result"]
-        action_exec_db = (
-            self.access.impl.model.objects.filter(id=id).only(*fields).get()
-        )
+        action_exec_db = self.access.impl.objects(id=id).only(*fields).get()
         return action_exec_db.result
 
     def _get_children(
@@ -367,9 +365,7 @@ class ActionExecutionAttributeController(BaseActionExecutionNestedController):
             )
             raise ValueError(msg)
 
-        action_exec_db = (
-            self.access.impl.model.objects.filter(id=id).only(*fields).get()
-        )
+        action_exec_db = self.access.impl.objects(id=id).only(*fields).get()
 
         permission_type = PermissionType.EXECUTION_VIEW
         rbac_utils = get_rbac_backend().get_utils_class()
@@ -416,9 +412,7 @@ class ActionExecutionRawResultController(BaseActionExecutionNestedController):
         """
         # NOTE: we need to use to_python() to uncompress the data
         try:
-            result = (
-                self.access.impl.model.objects.filter(id=id).only("result")[0].result
-            )
+            result = self.access.impl.objects(id=id).only("result")[0].result
         except IndexError:
             raise NotFoundException("Execution with id %s not found" % (id))
 

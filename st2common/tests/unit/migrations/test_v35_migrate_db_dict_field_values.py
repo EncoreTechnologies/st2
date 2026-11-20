@@ -41,6 +41,7 @@ from st2common.constants.triggers import TRIGGER_INSTANCE_PENDING
 from st2common.util import date as date_utils
 
 from st2tests import DbTestCase
+from st2tests.base import skip_unless_mongodb
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(
@@ -69,6 +70,7 @@ MOCK_PAYLOAD_2 = {"yaaaas": "le payload! 2"}
 # module doesn't have side affect and break / affect other tests
 
 
+@skip_unless_mongodb
 class DBFieldsMigrationScriptTestCase(DbTestCase):
     @classmethod
     def tearDownClass(cls):

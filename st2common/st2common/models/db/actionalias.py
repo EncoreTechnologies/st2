@@ -17,7 +17,7 @@ from __future__ import absolute_import
 import mongoengine as me
 
 from st2common import log as logging
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 from st2common.constants.types import ResourceType
 
@@ -117,6 +117,6 @@ class ActionAliasDB(
 
 
 # specialized access objects
-actionalias_access = MongoDBAccess(ActionAliasDB)
+actionalias_access = get_access(ActionAliasDB)
 
 MODELS = [ActionAliasDB]

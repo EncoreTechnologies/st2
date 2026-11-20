@@ -45,7 +45,7 @@ class FakeModelDB(stormbase.StormBaseDB):
 
 
 class FakeModel(persistence.Access):
-    impl = db.MongoDBAccess(FakeModelDB)
+    impl = db.get_access(FakeModelDB)
     publisher = None
 
     @classmethod

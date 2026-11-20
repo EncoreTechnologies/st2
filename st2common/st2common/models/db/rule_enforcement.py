@@ -18,7 +18,7 @@ from __future__ import absolute_import
 import mongoengine as me
 
 from st2common.fields import ComplexDateTimeField
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db import stormbase
 from st2common.util import date as date_utils
 from st2common.constants.rule_enforcement import RULE_ENFORCEMENT_STATUS_SUCCEEDED
@@ -92,6 +92,6 @@ class RuleEnforcementDB(stormbase.StormFoundationDB, stormbase.TagsMixin):
         return ":".join(uid)
 
 
-rule_enforcement_access = MongoDBAccess(RuleEnforcementDB)
+rule_enforcement_access = get_access(RuleEnforcementDB)
 
 MODELS = [RuleEnforcementDB]

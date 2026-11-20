@@ -15,7 +15,7 @@
 
 from __future__ import absolute_import
 from st2common import transport
-from st2common.models.db import MongoDBAccess
+from st2common.models.db import get_access
 from st2common.models.db.execution import ActionExecutionDB
 from st2common.models.db.execution import ActionExecutionOutputDB
 from st2common.persistence.base import Access
@@ -27,7 +27,7 @@ __all__ = [
 
 
 class ActionExecution(Access):
-    impl = MongoDBAccess(ActionExecutionDB)
+    impl = get_access(ActionExecutionDB)
     publisher = None
 
     @classmethod
@@ -46,7 +46,7 @@ class ActionExecution(Access):
 
 
 class ActionExecutionOutput(Access):
-    impl = MongoDBAccess(ActionExecutionOutputDB)
+    impl = get_access(ActionExecutionOutputDB)
 
     @classmethod
     def _get_impl(cls):
